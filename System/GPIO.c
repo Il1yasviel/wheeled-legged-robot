@@ -24,7 +24,7 @@ void My_GPIO_Init(void)
 
 
 
-    //用于I2C通信  B8是SCL  B9是SDA   
+    //用于I2C通信  B8是SCL  B9是SDA   用于MPU6050
     GPIO_InitStructure.GPIO_Pin = GPIO_Pin_8|GPIO_Pin_9;	 // 端口配置
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP; 		 //推挽输出
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;		 //IO口速度为50MHz

@@ -2,7 +2,7 @@
 #include <stdio.h> // 确保包含这个头文件以使用 printf
 
 char Serial_RxPacket[64]; // 接收缓冲区
-volatile uint8_t Serial_RxFlag = 0; // 增加 volatile 关键字  接收完成标志位
+volatile uint8_t USART3_RxFlag = 0; // 增加 volatile 关键字  接收完成标志位
 
 void USART3_Init(void)
 {
@@ -31,7 +31,6 @@ void USART3_Init(void)
 	
 	USART_ITConfig(USART3, USART_IT_RXNE, ENABLE);
 	
-	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
 	
 	NVIC_InitTypeDef NVIC_InitStructure;
 	NVIC_InitStructure.NVIC_IRQChannel = USART3_IRQn;
@@ -74,7 +73,7 @@ void USART3_IRQHandler(void)
             if (pRxPacket > 0) 
             {
                 Serial_RxPacket[pRxPacket] = '\0'; // 封口
-                Serial_RxFlag = 1;                 // 置位
+                USART3_RxFlag = 1;                 // 置位
                 pRxPacket = 0;                     // 清零下标
 				
 

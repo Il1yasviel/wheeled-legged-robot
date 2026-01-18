@@ -12,7 +12,7 @@ void USART1_Init(void)
     GPIO_InitTypeDef GPIO_InitStructure;
 
 	// 2. 配置 PA9 (TX)
-    // 【关键修改】必须是 复用开漏 (AF_OD)，对应 HAL 库的 GPIO_MODE_AF_OD
+    // 必须是 复用开漏 (AF_OD)
     // 只有设置为开漏，才能实现单线双向通信而不发生电平冲突
     GPIO_InitStructure.GPIO_Pin = GPIO_Pin_9;
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;

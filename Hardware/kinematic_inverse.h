@@ -9,13 +9,11 @@
 /* ============================================================ */
 // 根据之前的沟通，你的臂长是 6cm = 60.0mm
 #define LINK_L1    60.0f   // 左主动臂长度
-#define LINK_L2    120.0f   // 左从动臂长度
-#define LINK_L3    120.0f   // 右从动臂长度
+#define LINK_L2    100.0f   // 左从动臂长度
+#define LINK_L3    100.0f   // 右从动臂长度
 #define LINK_L4    60.0f   // 右主动臂长度
 
-// 【重要】L5 是左右两个舵机轴心的水平间距
-// 请务必用尺子测量你的实际机器，假设这里是 30mm
-#define LINK_L5    42.0f   
+#define LINK_L5    44.0f   
 
 #ifndef PI
 #define PI 3.14159265358979323846f
@@ -62,7 +60,7 @@ extern IK_Data_t Robot_IK;
 void IK_Init(void);
 
 // 核心解算函数：输入毫米坐标，直接更新结构体内的角度
-void IK_Compute(float xL, float yL, float xR, float yR);
+uint8_t IK_Compute(float xL, float yL, float xR, float yR);
 
 #endif /* __KINEMATIC_INVERSE_H */
 

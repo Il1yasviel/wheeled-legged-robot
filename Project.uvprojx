@@ -730,6 +730,16 @@
               <FileType>5</FileType>
               <FilePath>.\System\IWDG.h</FilePath>
             </File>
+            <File>
+              <FileName>USART2.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\System\USART2.c</FilePath>
+            </File>
+            <File>
+              <FileName>USART2.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\System\USART2.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -804,6 +814,16 @@
               <FileName>kinematic_inverse.h</FileName>
               <FileType>5</FileType>
               <FilePath>.\Hardware\kinematic_inverse.h</FilePath>
+            </File>
+            <File>
+              <FileName>esp32_01s.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Hardware\esp32_01s.c</FilePath>
+            </File>
+            <File>
+              <FileName>esp32_01s.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Hardware\esp32_01s.h</FilePath>
             </File>
           </Files>
         </Group>

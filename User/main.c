@@ -2,7 +2,8 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "GPIO.h"
-//#include "USART1.h"
+#include "USART1.h"
+#include "USART2.h"
 #include "USART3.h"
 #include "inv_mpu.h"
 #include "data_read.h"
@@ -19,6 +20,7 @@
 #include <string.h>       // 必须包含，用于查找逗号 strchr
 #include "kinematic_inverse.h" 
 #include <stdio.h>             // sscanf 需要这个
+#include "esp32_01s.h"
 
 // 任务句柄
 TaskHandle_t infTaskHandler;
@@ -50,10 +52,37 @@ void messageTask(void *arg)
     int id = 0;
     int angle = 0;
 	
-    while(1) // 必须是死循环
+	
+	//AT指令
+	uint8_t status = ESP8266_ConnectWiFi();
+	
+	    if (status == 0)
     {
+        printf("WiFi Connect Success!\r\n");
+    }
+    else
+    {
+        // 如果失败，status 的值能告诉你死在哪一步
+        // 1: AT指令无响应; 2: 连接AP失败
+        printf("WiFi Connect Failed! Error Code: %d\r\n", status);
+    }
+	
+    while(1) 
+    {		
+		if (USART2_RxFlag == 1)
+		{
+			// 如果收到 ESP32 发来的任何透传数据，直接打印到串口3看
+			printf("Receive: %s\r\n", USART2_RxBuffer);
+
+			// 处理完记得清空标志位
+			USART2_RxFlag = 0; 
+
+		}
+			
+		
+		
         // --- 1. 指令解析逻辑 ---
-        if (Serial_RxFlag == 1)
+        if (USART3_RxFlag == 1)
         {
             // 解析指令：第一个字母决定功能
             char cmd = Serial_RxPacket[0];
@@ -83,51 +112,116 @@ void messageTask(void *arg)
 				
 				
 				
-				                // ---------------------------------------------------------
-                // 【新增】逆运动学坐标指令
+				// ====================================================
+				// 【新增】PID 参数在线调试指令
+				// 协议格式: P<ID>,<Value>  (例如: P1,120.5 修改直立环KP)
+				// ====================================================
+                case 'P': case 'p':
+                {
+                    int pid_id = 0;
+                    float pid_val = 0.0f;
+                    
+                    // 使用 sscanf 解析：整数ID + 逗号 + 浮点数值
+                    int parsed_cnt = sscanf(&Serial_RxPacket[1], "%d,%f", &pid_id, &pid_val);
+
+                    if (parsed_cnt == 2) // 确保成功解析了 ID 和 数值 两个数据
+                    {
+                        switch (pid_id)
+                        {
+                            case 1: 
+                                upright_Kp = pid_val; 
+                                printf(">> [PID] Upright KP set to: %.3f\r\n", upright_Kp);
+                                break;
+                            case 2: 
+                                upright_Kd = pid_val; 
+                                printf(">> [PID] Upright KD set to: %.3f\r\n", upright_Kd);
+                                break;
+                            case 3: 
+                                cascade_speed_Kp = pid_val; 
+                                printf(">> [PID] Speed KP set to: %.3f\r\n", cascade_speed_Kp);
+                                break;
+                            case 4: 
+                                cascade_speed_Ki = pid_val; 
+                                printf(">> [PID] Speed KI set to: %.3f\r\n", cascade_speed_Ki);
+                                break;
+                            case 5: 
+                                turn_Kp = pid_val; 
+                                printf(">> [PID] Turn KP set to: %.3f\r\n", turn_Kp);
+                                break;
+                            case 6: 
+                                turn_Kd = pid_val; 
+                                printf(">> [PID] Turn KD set to: %.3f\r\n", turn_Kd);
+                                break;
+							
+							// --- 【新增】机械零点调节 ---
+                            case 7: 
+                                mechanical_zero = pid_val; 
+                                printf(">> [Setting] Mechanical Zero set to: %.3f\r\n", mechanical_zero); 
+                                break;
+							
+                            default:
+                                printf(">> Error: Unknown PID ID (Use 1-6)\r\n");
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        printf(">> Error: Format must be P<ID>,<Val>\r\n");
+                        printf(">> IDs: 1:U_Kp, 2:U_Kd, 3:V_Kp, 4:V_Ki, 5:T_Kp, 6:T_Kd\r\n");
+                    }
+                    break;
+                }
+				
+				
+				// ---------------------------------------------------------
+                // 【修改后】逆运动学坐标指令 - 支持双腿/四舵机 + 数学角度显示
                 // 协议格式: K<xL>,<yL>,<xR>,<yR>
-                // 例如: K0,90,0,90  (两腿都在 (0,90) 位置)
+                // ID映射: 左前=1, 左后=2, 右前=3, 右后=4
                 // ---------------------------------------------------------
-                case 'K': case 'k':
+				case 'K': case 'k':
                 {
                     // 使用 sscanf 解析 4 个浮点数
-                    // %f 对应 float, 逗号是分隔符
-                    // &Serial_RxPacket[1] 跳过开头的 'K'
                     int parsed_count = sscanf(&Serial_RxPacket[1], "%f,%f,%f,%f", 
                                               &cmd_xL, &cmd_yL, &cmd_xR, &cmd_yR);
 
                     if(parsed_count == 4) // 确保成功解析了4个数字
                     {
                         // 1. 调用核心解算函数
-                        IK_Compute(cmd_xL, cmd_yL, cmd_xR, cmd_yR);
-						
-					   // 5. 执行动作 (假设动作时间给 1000ms)
-					   Servo_Move(3, Robot_IK.Angle_Servo_Left_Rear, 1000); 
-                        Servo_Move(4, Robot_IK.Angle_Servo_Left_Front, 1000); 
-					   
-				
-						
-                        // 2. 打印确认收到的坐标
-                        printf(">> IK Input: L(%.1f, %.1f) R(%.1f, %.1f)\r\n", 
-                               cmd_xL, cmd_yL, cmd_xR, cmd_yR);
-						
-						// 3. 【修改这里】打印对比数据
-						// 格式说明：
-						// Math: LA(左Alpha) LB(左Beta) ...
-						// Servo: LF(左前) LR(左后) ...
-						printf(">> Math: LA:%d LB:%d RA:%d RB:%d || Servo: LF:%d LR:%d RF:%d RR:%d\r\n",
-							   // --- 第一组：纯数学角度 ---
-							   Robot_IK.Math_Angle_Alpha_Left,
-							   Robot_IK.Math_Angle_Beta_Left,
-							   Robot_IK.Math_Angle_Alpha_Right,
-							   Robot_IK.Math_Angle_Beta_Right,
-							   
-							   // --- 第二组：计算后的舵机角度 ---
-							   Robot_IK.Angle_Servo_Left_Front,  // LF
-							   Robot_IK.Angle_Servo_Left_Rear,   // LR
-							   Robot_IK.Angle_Servo_Right_Front, // RF (记得确保右腿公式也改好了)
-							   Robot_IK.Angle_Servo_Right_Rear   // RR
-								);
+                        // 注意：根据刚才修改的 IK_Compute，即使返回 0，Robot_IK 里也已经存入了计算出的“错误”数值
+                        uint8_t is_safe = IK_Compute(cmd_xL, cmd_yL, cmd_xR, cmd_yR);
+                        
+                        // 打印出刚刚算出的数学角度和舵机角度
+                        printf(">> [DEBUG] Input: L(%.0f, %.0f) R(%.0f, %.0f)\r\n", cmd_xL, cmd_yL, cmd_xR, cmd_yR);
+                        
+                        printf(">> LEFT : Math[A:%d, B:%d] -> Servo[ID2:%d, ID1:%d]\r\n", 
+                               Robot_IK.Math_Angle_Alpha_Left, 
+                               Robot_IK.Math_Angle_Beta_Left,
+                               Robot_IK.Angle_Servo_Left_Rear,  // 对应 Alpha
+                               Robot_IK.Angle_Servo_Left_Front  // 对应 Beta
+                              );
+                              
+                        printf(">> RIGHT: Math[A:%d, B:%d] -> Servo[ID4:%d, ID3:%d]\r\n", 
+                               Robot_IK.Math_Angle_Alpha_Right, 
+                               Robot_IK.Math_Angle_Beta_Right,
+                               Robot_IK.Angle_Servo_Right_Rear, 
+                               Robot_IK.Angle_Servo_Right_Front
+                              );
+
+                        // 3. 【安全开关】只有返回 1 (安全) 才允许动舵机
+                        if (is_safe == 1)
+                        {
+                            Servo_Move(1, Robot_IK.Angle_Servo_Left_Front, 1000); 
+                            Servo_Move(2, Robot_IK.Angle_Servo_Left_Rear, 1000);  
+                            Servo_Move(3, Robot_IK.Angle_Servo_Right_Front, 1000);
+                            Servo_Move(4, Robot_IK.Angle_Servo_Right_Rear, 1000); 
+                            printf(">> [STATUS] Safe -> Executing Move.\r\n");
+                        }
+                        else
+                        {
+                            // 4. 如果不安全，明确提示
+                            // 此时舵机不动，但你已经在上面看到了算出来的越界数值
+                            printf(">> [STATUS] UNSAFE LIMITS! Motors LOCKED.\r\n");
+                        }
                     }
                     else
                     {
@@ -135,7 +229,6 @@ void messageTask(void *arg)
                     }
                     break;
                 }
-
 				
 				
 				                // ====================================================
@@ -187,7 +280,7 @@ void messageTask(void *arg)
             }
             
             // 处理完后务必清空标志位，准备接收下一帧
-            Serial_RxFlag = 0; 
+            USART3_RxFlag = 0; 
 			
         }
 
@@ -250,42 +343,44 @@ void mainTask(void *arg)
 
 int main(void)
 {
+	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
 	My_GPIO_Init();
 	USART1_Init();
+	USART2_Init();
 	USART3_Init();
 	TIM1_Init();
 	TIM2_Init();
 	TIM3_Init();
 	TIM4_Init();
 	
-//	delay_ms(200); // 上电后稍作等待
-//	mpu_dmp_init();
-//	
-//	// --- MPU6050 初始化带超时重启机制 ---
-//    
-//    int retry_count = 0;
-//    const int MAX_RETRIES = 25; // 设置最大重试次数：25次 * 200ms = 5秒
-//	
-//	// 此时调度器未启动，函数内部会自动调用 delay_us 进行忙等待
-//    while(mpu_dmp_init() != 0) 
-//    {        
-//		retry_count++;
-//        // 判断是否超时
-//        if(retry_count >= MAX_RETRIES)
-//        {
-//            printf(">> MPU Error Timeout! System Resetting Now... <<\r\n");
-//            
-//            // 重要：在复位前给一点点延时，确保串口把上面那句话发完，否则你看不到提示就复位了
-//            delay_ms(100); 
-//            
-//            // --- 系统软复位函数 ---
-//            // 这是 CMSIS 标准库自带的，不需要额外 include，在 stm32f10x.h 里最终会包含
-//            NVIC_SystemReset(); 
-//        }
-//        
-//        delay_ms(200); // 每次失败等待 200ms
-//    }
-//	
+	delay_ms(200); // 上电后稍作等待
+	mpu_dmp_init();
+	
+	// --- MPU6050 初始化带超时重启机制 ---
+    
+    int retry_count = 0;
+    const int MAX_RETRIES = 25; // 设置最大重试次数：25次 * 200ms = 5秒
+	
+	// 此时调度器未启动，函数内部会自动调用 delay_us 进行忙等待
+    while(mpu_dmp_init() != 0) 
+    {        
+		retry_count++;
+        // 判断是否超时
+        if(retry_count >= MAX_RETRIES)
+        {
+            printf(">> MPU Error Timeout! System Resetting Now... <<\r\n");
+            
+            // 重要：在复位前给一点点延时，确保串口把上面那句话发完，否则你看不到提示就复位了
+            delay_ms(100); 
+            
+            // --- 系统软复位函数 ---
+            // 这是 CMSIS 标准库自带的，不需要额外 include，在 stm32f10x.h 里最终会包含
+            NVIC_SystemReset(); 
+        }
+        
+        delay_ms(200); // 每次失败等待 200ms
+    }
+	
 
 
 

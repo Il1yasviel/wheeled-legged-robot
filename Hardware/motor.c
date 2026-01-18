@@ -1,10 +1,10 @@
 #include "motor.h"
 
 //机械零点
-float mechanical_zero=-5.0f;//0.3
+float mechanical_zero=-12.0f;//0.3
 //直立环
-float upright_Kp=30.0f;  //极性+  65*0.6 39                25.0
-float upright_Kd=-0.12f;       //极性-   -0.32*0.6  -0.192    -0.15
+float upright_Kp=110.0f;  //极性+  65*0.6 39                25.0
+float upright_Kd=-0.25f;       //极性-   -0.32*0.6  -0.192    -0.15
 //速度环
 // 修改后的速度环参数（已转换）
 float cascade_speed_Kp = 0.267f; 

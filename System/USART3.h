@@ -5,8 +5,8 @@
 #include <stdio.h>
 
 // --- 全局变量声明 ---
+extern volatile uint8_t USART3_RxFlag; // 告诉外界：这个变量在 c 文件里定义了
 extern char Serial_RxPacket[64];
-extern volatile uint8_t Serial_RxFlag; 
 
 void USART3_Init(void);
 

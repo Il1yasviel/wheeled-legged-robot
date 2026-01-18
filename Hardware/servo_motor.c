@@ -50,11 +50,15 @@ void Servo_Move(uint8_t id, uint8_t angle, uint16_t time_ms)
 }
 
 
-//舵机初始化到30度
+
 void servo_motor_position_Init(void)
 {
-	Servo_Move(3, 120, 1000);
+	Servo_Move(1, 100, 1000);
 	 delay_ms(50);
-	Servo_Move(4, 120, 1000);
+	Servo_Move(2, 140, 1000);
+	 delay_ms(50);
+	Servo_Move(3, 140, 1000);
+	 delay_ms(50);
+	Servo_Move(4, 100, 1000);
 	 delay_ms(50);
 }
