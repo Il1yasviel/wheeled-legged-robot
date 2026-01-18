@@ -21,6 +21,7 @@
 #include "kinematic_inverse.h" 
 #include <stdio.h>             // sscanf 需要这个
 #include "esp32_01s.h"
+#include <string.h>
 
 // 任务句柄
 TaskHandle_t infTaskHandler;
@@ -59,6 +60,10 @@ void messageTask(void *arg)
 	    if (status == 0)
     {
         printf("WiFi Connect Success!\r\n");
+		
+		// 【新增】连接成功后，启动 TCP 服务
+        vTaskDelay(pdMS_TO_TICKS(500)); // 稍作延时
+        ESP8266_StartTCPServer();
     }
     else
     {
@@ -73,7 +78,32 @@ void messageTask(void *arg)
 		{
 			// 如果收到 ESP32 发来的任何透传数据，直接打印到串口3看
 			printf("Receive: %s\r\n", USART2_RxBuffer);
-
+			
+			
+			// 2. 检查是否是 TCP 数据 (特征：包含 "+IPD")
+            char *pIPD = strstr(USART2_RxBuffer, "+IPD");
+			
+			
+			if (pIPD != NULL)
+            {
+				
+				// 2. 寻找冒号 ':'
+				char *pColon = strchr(pIPD, ':');
+				if (pColon != NULL)
+				{
+					// 3. 定义一个临时变量 (分配在栈上，用完即焚)
+					char temp_cmd_buffer[64]; 
+					// 为了安全，先清空一下这个临时数组
+					memset(temp_cmd_buffer, 0, sizeof(temp_cmd_buffer));
+					// 4. 把冒号后面的指令存到临时变量里
+					// pColon + 1 就是指令的起始位置
+					// 这里的 strcpy 会把后面的换行符也一起拷进去，不过打印出来没影响
+					strcpy(temp_cmd_buffer, pColon + 1);
+					// 5. 打印这个临时变量，看看是否提取正确
+					printf(">> [DEBUG] Received TCP Cmd: %s\r\n", temp_cmd_buffer);
+				}
+			}
+				
 			// 处理完记得清空标志位
 			USART2_RxFlag = 0; 
 

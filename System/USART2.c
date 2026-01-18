@@ -2,6 +2,9 @@
 
 char USART2_RxBuffer[256]; // 接收缓冲区
 volatile uint8_t USART2_RxFlag = 0; // 增加 volatile 关键字  接收完成标志位
+// 【新增】定义全局下标变量
+volatile uint16_t USART2_RxIndex = 0; 
+
  
  void USART2_Init(void)
  {
@@ -70,35 +73,33 @@ void USART2_SendString(char *str)
 
 void USART2_IRQHandler(void)
 {
-	static uint16_t index = 0;
-
     if (USART_GetITStatus(USART2, USART_IT_RXNE) != RESET)
     {
         uint8_t RxData = USART_ReceiveData(USART2);
 
-        // 1. 判断是否为结束符
-        if (RxData == '\r' || RxData == '\n')
+        // 防止缓冲区溢出 (最大255)
+        if (USART2_RxIndex < 255)
         {
-            if (index > 0) 
-            {
-                USART2_RxBuffer[index] = '\0'; // 封口
-                USART2_RxFlag = 1;                 // 置位
-                index = 0;                     // 清零下标
-				
-
-            }
+            // 收到什么就存什么
+            USART2_RxBuffer[USART2_RxIndex++] = RxData;
         }
 
-        else
+        // 1. 判断是否为结束符 (ESP8266 发送的是 \r\n)
+        // 这里的逻辑改为：收到换行符，置位标志位，但【不清零下标】
+        if (RxData == '\n') // 收到换行
         {
-            // 2. 正常接收
-           if (index < 254) 
-            {
-                USART2_RxBuffer[index++] = RxData;
-            }
+            // 给字符串封口，方便 printf 打印
+            // 注意：不要覆盖当前位置，要在下一个位置写 \0，但 index 不自增
+            USART2_RxBuffer[USART2_RxIndex] = '\0'; 
+            
+            // 置位标志位，告诉主程序有数据来了
+            USART2_RxFlag = 1; 
+            
+            // 【重点】这里绝对不要写 index = 0; ！！！
+            // 让它继续往后存，直到主程序调用 ClearBuffer
         }
-
-            USART_ClearITPendingBit(USART2, USART_IT_RXNE);
+        
+        USART_ClearITPendingBit(USART2, USART_IT_RXNE);
     }
 }
 

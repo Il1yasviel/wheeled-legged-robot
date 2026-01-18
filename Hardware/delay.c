@@ -28,6 +28,11 @@ void delay_us(uint32_t nus)
     }
 }
 
+
+
+
+//在 main() 函数里（vTaskStartScheduler 之前）：它会自动变成死等延时，保证初始化逻辑正确。
+//在任务里（如 messageTask）：它会自动变成 vTaskDelay，保证不卡死其他任务。
 void delay_ms(uint32_t nms)
 {
     // 确保调度器已经启动

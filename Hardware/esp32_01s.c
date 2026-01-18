@@ -8,6 +8,9 @@
 void ESP8266_ClearBuffer(void) {
     memset(USART2_RxBuffer, 0, 256);
     USART2_RxFlag = 0;
+    
+    // 【新增】必须在这里手动把下标归零
+    USART2_RxIndex = 0; 
 }
 
 /**
@@ -46,26 +49,56 @@ uint8_t ESP8266_ConnectWiFi(void) {
     return 0; // 成功
 }
 
+
+
 /**
- * @brief 开启 TCP Server 模式 (端口 8080)
- * 注意：必须在 WiFi 连接成功后调用
+ * @brief 开启 TCP Server 并打印 IP (简化版)
+ * 现在中断支持累积数据了，我们可以直接死等 1 秒，然后一次性打印所有内容
  */
 void ESP8266_StartTCPServer(void)
 {
-    printf(">> [ESP] Starting TCP Server...\r\n");
+    printf(">> [ESP] Config TCP Server...\r\n");
+    
+    // 刚连上 WiFi，稍微缓一下
+    vTaskDelay(pdMS_TO_TICKS(1000)); 
 
-    // 1. 查询本地 IP (这一步是为了让你在串口助手看到 IP，好填进 Python 里)
-    // ESP 返回格式: +CIFSR:STAIP,"192.168.x.x"
-    ESP8266_SendCmd("AT+CIFSR", "OK", 1000); 
+    // ========================================================
+    // 1. 获取并打印 IP 地址
+    // ========================================================
+    
+    printf(">> [ESP] Requesting IP Info...\r\n");
+    ESP8266_ClearBuffer();             // 下标归零
+    USART2_SendString("AT+CIFSR\r\n"); // 发送查询
+    
+    // 直接死等 1 秒！
+    // 因为现在中断会把 IP、MAC、OK 全部攒在 Buffer 里，不会覆盖了
+    vTaskDelay(pdMS_TO_TICKS(1000)); 
 
-    // 2. 开启多连接模式 (Server 模式必须开启 MUX=1)
+    if(USART2_RxFlag)
+    {
+        // 打印 Buffer 里的所有内容
+        // 你会看到类似：
+        // +CIFSR:STAIP,"192.168.x.x"
+        // +CIFSR:STAMAC,"xx:xx:xx"
+        // OK
+        printf("==========================================\r\n");
+        printf(">> ESP8266 RESPONSE: \r\n%s\r\n", USART2_RxBuffer);
+        printf("==========================================\r\n");
+    }
+    else
+    {
+        printf(">> [ESP] Warning: No response!\r\n");
+    }
+
+    // ========================================================
+    // 2. 开启 Server
+    // ========================================================
+    // 后面的逻辑保持不变
     if(ESP8266_SendCmd("AT+CIPMUX=1", "OK", 1000) != 0)
     {
         printf(">> [ESP] Error: CIPMUX Failed\r\n");
-        return;
     }
-
-    // 3. 开启服务器，端口 8080
+    
     if(ESP8266_SendCmd("AT+CIPSERVER=1,8080", "OK", 1000) == 0)
     {
         printf(">> [ESP] TCP Server Started! Port: 8080\r\n");
