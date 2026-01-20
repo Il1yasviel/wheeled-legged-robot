@@ -244,6 +244,9 @@ void messageTask(void *arg)
                             Servo_Move(2, Robot_IK.Angle_Servo_Left_Rear, 1000);  
                             Servo_Move(3, Robot_IK.Angle_Servo_Right_Front, 1000);
                             Servo_Move(4, Robot_IK.Angle_Servo_Right_Rear, 1000); 
+							
+						   Motor_Set_Target_Height(cmd_yL, cmd_yR);	
+							
                             printf(">> [STATUS] Safe -> Executing Move.\r\n");
                         }
                         else
@@ -316,8 +319,8 @@ void messageTask(void *arg)
 
         // --- 【修改点3】在打印中增加舵机信息 (SID: 舵机ID, Ang: 角度) ---
         // P:姿态 | M:速度 | T:转向 | SID:舵机ID | Ang:舵机角度
-//        printf("P:%.2f | M:%d | T:%d | SID:%d | Ang:%d\r\n", 
-//                pitch, Movement, turnment, Last_Servo_ID, Last_Servo_Angle);
+        printf("P:%.2f | M:%d | T:%d | SID:%d | Ang:%d\r\n", 
+                pitch, Movement, turnment, Last_Servo_ID, Last_Servo_Angle);
 
         // --- 3. 延时 ---
         // 40ms 刷新一次打印，既能看清数据，又不会占满串口带宽
@@ -361,6 +364,7 @@ void mainTask(void *arg)
             task_tick = 0;       // 清零计数器
         }
 
+		Motor_PID_Update_Task(); 
 		speed_read();
 		control_motor();
 		

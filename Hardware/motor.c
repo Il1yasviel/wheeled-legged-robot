@@ -1,14 +1,32 @@
 #include "motor.h"
 
+
+
+// --- 1. 参数配置区 ---
+#define H_MIN  83.0f    // 最低高度
+#define H_MAX  137.0f   // 最高高度
+
+// PID 映射范围
+#define KP_AT_MIN  130.0f   // 高度83时的 Kp
+#define KP_AT_MAX  190.0f   // 高度137时的 Kp
+
+#define KD_AT_MIN  -0.25f   // 高度83时的 Kd
+#define KD_AT_MAX  -0.35f   // 高度137时的 Kd (建议高处阻尼大一点)
+
+// --- 2. 内部静态变量 (不给 main.c 看) ---
+static float internal_target_avg_height = 83.0f; // 目标平均高度
+static float internal_current_sim_height = 83.0f;// 当前模拟高度
+
+
 //机械零点
-float mechanical_zero=-12.0f;//0.3
+float mechanical_zero=-8.2f;//0.3
 //直立环
 float upright_Kp=110.0f;  //极性+  65*0.6 39                25.0
 float upright_Kd=-0.25f;       //极性-   -0.32*0.6  -0.192    -0.15
 //速度环
 // 修改后的速度环参数（已转换）
-float cascade_speed_Kp = 0.267f; 
-float cascade_speed_Ki = 0.00133f;
+float cascade_speed_Kp =0; //0.267f; 
+float cascade_speed_Ki =0; //0.00133f;
 //转向环
 float turn_Kp=-10.0f;   //极性负 期望小车转向，正反馈
 float turn_Kd=0.05f;    //极性正抑制小车转向，负反馈
@@ -107,8 +125,8 @@ float speed_ring(int16_t encoder_left, int16_t encoder_right)
     float target_angle = (cascade_speed_Kp * Encoder) + (cascade_speed_Ki * Encoder_Integral);
     // 2. 【添加限幅】防止倾斜角度过大导致直接倒地
     // 建议范围在 10.0 到 15.0 度之间，根据你机器的重心高度来定
-    if(target_angle > 12.0f)  target_angle = 12.0f;  // 最大前倾 12 度
-    if(target_angle < -12.0f) target_angle = -12.0f; // 最大后仰 12 度
+    if(target_angle > 30.0f)  target_angle = 30.0f;  // 最大前倾 12 度
+    if(target_angle < -30.0f) target_angle = -30.0f; // 最大后仰 12 度
 
     if((pitch >= 80) || (pitch <= -80)) Encoder_Integral = 0;    
 
@@ -156,5 +174,59 @@ void control_motor(void)
     Motor2_SetSpeed(pwm2);
 
 }
+
+/**
+ * @brief  设置目标高度 (由 main.c 解析完指令后调用)
+ * @param  yL 左腿高度
+ * @param  yR 右腿高度
+ */
+void Motor_Set_Target_Height(float yL, float yR)
+{
+    // 直接计算平均高度并存起来
+    internal_target_avg_height = (yL + yR) / 2.0f;
+    
+    // 安全限幅
+    if (internal_target_avg_height < H_MIN) internal_target_avg_height = H_MIN;
+    if (internal_target_avg_height > H_MAX) internal_target_avg_height = H_MAX;
+}
+
+/**
+ * @brief  PID 参数更新任务
+ * @note   请放在 mainTask 的 while(1) 中调用，建议 5ms 一次
+ */
+void Motor_PID_Update_Task(void)
+{
+    // 1. 高度平滑过渡 (模拟舵机运动轨迹)
+    // 假设 5ms 调用一次，步长 0.3mm，约等于 60mm/s 的速度
+    float step = 0.3f; 
+
+    if (internal_current_sim_height < internal_target_avg_height)
+    {
+        internal_current_sim_height += step;
+        if(internal_current_sim_height > internal_target_avg_height) 
+            internal_current_sim_height = internal_target_avg_height;
+    }
+    else if (internal_current_sim_height > internal_target_avg_height)
+    {
+        internal_current_sim_height -= step;
+        if(internal_current_sim_height < internal_target_avg_height) 
+            internal_current_sim_height = internal_target_avg_height;
+    }
+
+    // 2. 线性插值计算 PID
+    float ratio;
+    
+    // 计算当前高度在 [83, 137] 中的比例 (0.0 ~ 1.0)
+    ratio = (internal_current_sim_height - H_MIN) / (H_MAX - H_MIN);
+    
+    // 防止计算越界
+    if(ratio < 0.0f) ratio = 0.0f;
+    if(ratio > 1.0f) ratio = 1.0f;
+
+    // 3. 更新全局 PID 参数
+    upright_Kp = KP_AT_MIN + ratio * (KP_AT_MAX - KP_AT_MIN);
+    upright_Kd = KD_AT_MIN + ratio * (KD_AT_MAX - KD_AT_MIN);
+}
+
 
 
