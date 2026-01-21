@@ -22,10 +22,15 @@
 #include <stdio.h>             // sscanf 需要这个
 #include "esp32_01s.h"
 #include <string.h>
+#include "body_posture.h"
 
 // 任务句柄
 TaskHandle_t infTaskHandler;
 TaskHandle_t mainTaskHandler;
+TaskHandle_t balanceTaskHandler;
+
+//用于接收坐标的全局变量，放到body_posture.h里
+//float cmd_xL, cmd_yL, cmd_xR, cmd_yR;
 
 /**
  * @brief 串口指令解析与数据打印任务
@@ -38,10 +43,7 @@ void messageTask(void *arg)
     printf("Commands: M(Speed), T(Turn), S(Stop) \r\n");
 	
 	// --- 【新增】初始化逆运动学默认值 ---
-    IK_Init(); 
-	
-	// --- 【新增】用于接收坐标的临时变量 ---
-    float cmd_xL, cmd_yL, cmd_xR, cmd_yR;
+    IK_Init(); 	
     
     // --- 【修改点1】定义变量来“记住”最后一次舵机的状态 ---
     // 必须定义在 while 循环外面，否则每次循环都会被清零
@@ -53,7 +55,7 @@ void messageTask(void *arg)
     int id = 0;
     int angle = 0;
 	
-	
+
 	//AT指令
 	uint8_t status = ESP8266_ConnectWiFi();
 	
@@ -240,12 +242,14 @@ void messageTask(void *arg)
                         // 3. 【安全开关】只有返回 1 (安全) 才允许动舵机
                         if (is_safe == 1)
                         {
+                            //先根据解算的结果应用到每个舵机上
                             Servo_Move(1, Robot_IK.Angle_Servo_Left_Front, 1000); 
                             Servo_Move(2, Robot_IK.Angle_Servo_Left_Rear, 1000);  
                             Servo_Move(3, Robot_IK.Angle_Servo_Right_Front, 1000);
                             Servo_Move(4, Robot_IK.Angle_Servo_Right_Rear, 1000); 
 							
-						   Motor_Set_Target_Height(cmd_yL, cmd_yR);	
+                            //然后再根据高度值来获取平均高度，以便之后实时更新PID的系数值
+						    Motor_Set_Target_Height(cmd_yL, cmd_yR);	
 							
                             printf(">> [STATUS] Safe -> Executing Move.\r\n");
                         }
@@ -260,6 +264,24 @@ void messageTask(void *arg)
                     {
                         printf(">> Error: Format must be KxL,yL,xR,yR\r\n");
                     }
+                    break;
+                }
+
+
+
+                case 'R': case 'r': // 指令格式：R5.0 (向右歪5度) 或 R-5.0 (向左歪5度)
+                {
+                    float target_angle = 0.0f;
+                    
+                    // 解析浮点数
+                    // 这里的 &Serial_RxPacket[1] 跳过第一个字母 'R'
+                    // 假设你的 atof 或 sscanf 支持浮点解析
+                    target_angle = atof(&Serial_RxPacket[1]); 
+                    
+                    // 调用刚才写的函数更新目标值
+                    Set_Target_Roll_Angle(target_angle);
+                    
+                    printf(">> Set Target Roll: %.2f Degree\r\n", target_angle);
                     break;
                 }
 				
@@ -317,10 +339,11 @@ void messageTask(void *arg)
 			
         }
 
-        // --- 【修改点3】在打印中增加舵机信息 (SID: 舵机ID, Ang: 角度) ---
-        // P:姿态 | M:速度 | T:转向 | SID:舵机ID | Ang:舵机角度
-        printf("P:%.2f | M:%d | T:%d | SID:%d | Ang:%d\r\n", 
-                pitch, Movement, turnment, Last_Servo_ID, Last_Servo_Angle);
+
+        //翻滚角向右侧翻滚是负值，向左侧翻滚是负值
+        // P:俯仰角 | R:翻滚角 | M:速度 | T:转向 | SID:舵机ID | Ang:舵机角度
+        printf("P:%.2f | R:%.2f | M:%d | T:%d | SID:%d | Ang:%d\r\n", 
+                pitch, (float)roll , (int)Movement, turnment, Last_Servo_ID, Last_Servo_Angle);
 
         // --- 3. 延时 ---
         // 40ms 刷新一次打印，既能看清数据，又不会占满串口带宽
@@ -333,14 +356,13 @@ void mainTask(void *arg)
 	TickType_t xLastWakeTime;
     const TickType_t xFrequency = 5; // 定义周期为 5ms (对应 FreeRTOS configTICK_RATE_HZ 为 1000)	
 	
-	// 定义一个静态变量作为分频计数器
-    static uint8_t task_tick = 0; 
+	// 定义静态变量作为分频计数器
+	static uint8_t mpu_tick = 0; 
+    static uint8_t print_tick = 0;
 	
 	    // 2. 初始化时间变量
     xLastWakeTime = xTaskGetTickCount();
-	//初始化舵机的位置
-	servo_motor_position_Init();
-	
+
 	    // 2. 一切准备就绪后，开启看门狗！
     IWDG_Init(); 
     printf("IWDG Enabled.\r\n");
@@ -353,16 +375,18 @@ void mainTask(void *arg)
 		vTaskDelayUntil(&xLastWakeTime, xFrequency);
 		
 		
-		// 2. 计数器自增
-        task_tick++;
+		// 计数器自增
+        mpu_tick++;
+        print_tick++; // 专门用来计时的，不会被清零干扰
 		
 		
 		// 3. 【分频逻辑】每 10ms 读取一次 MPU6050  必须大于10ms，否则太快读取不到MPU的数据
-        if(task_tick >= 2) 
+        if(mpu_tick >= 2) 
         {
             MPU6050_Data_read(); // 读取姿态 (此时 DMP 刚好有数据)
-            task_tick = 0;       // 清零计数器
+		    mpu_tick = 0;  // 清零计数器
         }
+
 
 		Motor_PID_Update_Task(); 
 		speed_read();
@@ -374,6 +398,52 @@ void mainTask(void *arg)
 
     }
 }
+
+
+// =============================================================
+// 【新增】独立的平衡任务 (Balance Task)
+// 专门负责算腿，不干扰主任务，也不会被主任务卡死
+// =============================================================
+void balanceTask(void *arg)
+{
+    TickType_t xLastWakeTime;
+    const TickType_t xFrequency = 10; // 10ms (100Hz) 控制频率，对舵机足够了
+    
+    // 局部变量
+    float final_yL, final_yR;
+    
+    // 初始化时间
+    xLastWakeTime = xTaskGetTickCount();
+    
+    // 初始化逆解
+    IK_Init(); 
+    
+    // 【关键】高度初始化 (必须是110，给活动空间)
+    cmd_xL = 22.0f; cmd_yL = 110.0f;
+    cmd_xR = 22.0f; cmd_yR = 110.0f;
+
+    while(1)
+    {
+        // 1. 严格控制周期
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+        
+        // 2. 计算姿态 PID (带入死区和方向修正)
+        Body_Balance_Compute(roll, gyrox, &final_yL, &final_yR);
+
+        // 3. 逆运动学解算
+        uint8_t is_safe = IK_Compute(cmd_xL, final_yL, cmd_xR, final_yR);
+
+        // 4. 驱动舵机 (如果解算成功)
+        if (is_safe)
+        {
+            Servo_Move(1, Robot_IK.Angle_Servo_Left_Front, 25); //这里从1000ms换成了25ms，加快舵机的响应速度
+            Servo_Move(2, Robot_IK.Angle_Servo_Left_Rear, 25);  
+            Servo_Move(3, Robot_IK.Angle_Servo_Right_Front, 25);
+            Servo_Move(4, Robot_IK.Angle_Servo_Right_Rear, 25); 
+        }
+    }
+}
+
 
 int main(void)
 {
@@ -424,6 +494,9 @@ int main(void)
     // 参数：任务函数, 任务名, 堆栈深度, 参数, 优先级, 任务句柄
     xTaskCreate(messageTask, "print_Inf", 1024, NULL, 2, &infTaskHandler);
     xTaskCreate(mainTask, "main_Task", 1024, NULL, 4, &mainTaskHandler);
+	// 3. 【新增】平衡任务 (优先级 3 - 负责腿部舵机)
+    xTaskCreate(balanceTask, "bal_Task", 1024, NULL, 3, &balanceTaskHandler);
+	
     // 5. 启动调度器
     vTaskStartScheduler();
 

@@ -825,6 +825,16 @@
               <FileType>5</FileType>
               <FilePath>.\Hardware\esp32_01s.h</FilePath>
             </File>
+            <File>
+              <FileName>body_posture.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Hardware\body_posture.c</FilePath>
+            </File>
+            <File>
+              <FileName>body_posture.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Hardware\body_posture.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

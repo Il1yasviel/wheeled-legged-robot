@@ -1,0 +1,44 @@
+#ifndef __BODY_POSTURE_H
+#define __BODY_POSTURE_H		
+
+#include "stm32f10x.h" 
+#include "data_read.h"
+#include <math.h>
+
+// --- 机械限位配置 (放在头文件方便修改) ---
+#define LEG_MAX_HEIGHT  137.0f  // 腿最长伸至 170mm
+#define LEG_MIN_HEIGHT  83.0f   // 腿最短缩至 90mm
+
+// --- 1. 参数配置区 ---
+#define H_MIN  83.0f    // 最低高度
+#define H_MAX  137.0f   // 最高高度
+
+// PID 映射范围
+#define KP_AT_MIN  130.0f   // 高度83时的 Kp
+#define KP_AT_MAX  210.0f   // 高度137时的 Kp
+
+#define KD_AT_MIN  -0.25f   // 高度83时的 Kd
+#define KD_AT_MAX  -0.35f   // 高度137时的 Kd (建议高处阻尼大一点)
+
+
+extern float internal_target_avg_height; // 目标平均高度
+extern float internal_current_sim_height;// 当前模拟高度
+//用于接收坐标的全局变量 ---
+extern float cmd_xL, cmd_yL, cmd_xR, cmd_yR;
+extern float roll_Kp;
+extern float roll_Kd;
+extern float target_roll_angle; // 期望翻滚角（通常是0，也可以设定为倾斜）
+// 【新增】导出机械中值变量
+extern float roll_mechanical_zero;
+
+void Motor_Set_Target_Height(float yL, float yR);
+
+// 输入传感器数据，通过指针“带回”计算好的最终高度
+void Body_Balance_Compute(float current_roll, float gyro_roll_rate, float *out_yL, float *out_yR);
+
+// body_posture.h
+void Set_Target_Roll_Angle(float angle);
+
+#endif
+
+

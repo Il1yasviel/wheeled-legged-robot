@@ -1,23 +1,6 @@
 #include "motor.h"
 
 
-
-// --- 1. 参数配置区 ---
-#define H_MIN  83.0f    // 最低高度
-#define H_MAX  137.0f   // 最高高度
-
-// PID 映射范围
-#define KP_AT_MIN  130.0f   // 高度83时的 Kp
-#define KP_AT_MAX  190.0f   // 高度137时的 Kp
-
-#define KD_AT_MIN  -0.25f   // 高度83时的 Kd
-#define KD_AT_MAX  -0.35f   // 高度137时的 Kd (建议高处阻尼大一点)
-
-// --- 2. 内部静态变量 (不给 main.c 看) ---
-static float internal_target_avg_height = 83.0f; // 目标平均高度
-static float internal_current_sim_height = 83.0f;// 当前模拟高度
-
-
 //机械零点
 float mechanical_zero=-8.2f;//0.3
 //直立环
@@ -176,22 +159,7 @@ void control_motor(void)
 }
 
 /**
- * @brief  设置目标高度 (由 main.c 解析完指令后调用)
- * @param  yL 左腿高度
- * @param  yR 右腿高度
- */
-void Motor_Set_Target_Height(float yL, float yR)
-{
-    // 直接计算平均高度并存起来
-    internal_target_avg_height = (yL + yR) / 2.0f;
-    
-    // 安全限幅
-    if (internal_target_avg_height < H_MIN) internal_target_avg_height = H_MIN;
-    if (internal_target_avg_height > H_MAX) internal_target_avg_height = H_MAX;
-}
-
-/**
- * @brief  PID 参数更新任务
+ * @brief  目的是根据高度来实时更新电机的PID系数
  * @note   请放在 mainTask 的 while(1) 中调用，建议 5ms 一次
  */
 void Motor_PID_Update_Task(void)
