@@ -329,6 +329,26 @@ void messageTask(void *arg)
                     }
                     break;
                 }
+				
+				
+				
+				
+				case 'H': case 'h':
+				{
+					// 使用 sscanf 解析 2 个浮点数 (只解析 yL 和 yR)
+					// 预期格式例如: H160.5,160.5
+					int parsed_count = sscanf(&Serial_RxPacket[1], "%f,%f", &cmd_yL, &cmd_yR);
+
+					if(parsed_count == 2) // 确保成功解析了2个数字
+					{
+						// 这里只执行高度设置函数
+						Motor_Set_Target_Height(cmd_yL, cmd_yR);
+
+						// 建议加一句调试打印，方便确认数据是否正确接收
+						printf(">> [CMD H] Set Height -> L:%.1f, R:%.1f\r\n", cmd_yL, cmd_yR);
+					}
+					break; // switch 语句通常需要 break，防止穿透
+				}
 
 				
                 
@@ -345,8 +365,8 @@ void messageTask(void *arg)
 
         //翻滚角向右侧翻滚是负值，向左侧翻滚是负值
         // P:俯仰角 | R:翻滚角 | M:速度 | T:转向 | SID:舵机ID | Ang:舵机角度
-        printf("P:%.2f | R:%.2f | M:%d | T:%d | SID:%d | Ang:%d\r\n", 
-                pitch, (float)roll , (int)Movement, turnment, Last_Servo_ID, Last_Servo_Angle);
+        printf("P:%.2f | R:%.2f | PWM1:%d | PWM2:%d | M:%d | T:%d | SID:%d | Ang:%d\r\n", 
+                pitch, (float)roll , debug_pwm1, debug_pwm2 , (int)Movement, turnment, Last_Servo_ID, Last_Servo_Angle);
 
         // --- 3. 延时 ---
         // 40ms 刷新一次打印，既能看清数据，又不会占满串口带宽
@@ -453,10 +473,10 @@ void balanceTask(void *arg)
         // 驱动舵机 (如果解算成功)
         if (is_safe)
         {
-            Servo_Move(1, Robot_IK.Angle_Servo_Left_Front, 500); //这里从1000ms换成了25ms，加快舵机的响应速度
-            Servo_Move(2, Robot_IK.Angle_Servo_Left_Rear, 500);  
-            Servo_Move(3, Robot_IK.Angle_Servo_Right_Front, 500);
-            Servo_Move(4, Robot_IK.Angle_Servo_Right_Rear, 500); 
+            Servo_Move(1, Robot_IK.Angle_Servo_Left_Front, 50); //这里从1000ms换成了25ms，加快舵机的响应速度
+            Servo_Move(2, Robot_IK.Angle_Servo_Left_Rear, 50);  
+            Servo_Move(3, Robot_IK.Angle_Servo_Right_Front, 50);
+            Servo_Move(4, Robot_IK.Angle_Servo_Right_Rear, 50); 
         }
 		//**********************************
     }

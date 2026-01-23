@@ -4,7 +4,7 @@
 //机械零点
 float mechanical_zero=-8.2f;//0.3
 //直立环
-float upright_Kp=110.0f;  //极性+  65*0.6 39                25.0
+float upright_Kp=150.0f;  //极性+  65*0.6 39                25.0
 float upright_Kd=-0.25f;       //极性-   -0.32*0.6  -0.192    -0.15
 //速度环
 // 修改后的速度环参数（已转换）
@@ -12,17 +12,21 @@ float cascade_speed_Kp =0.267f;
 float cascade_speed_Ki =0.00133f;
 //转向环
 float turn_Kp=-10.0f;   //极性负 期望小车转向，正反馈
-float turn_Kd=0.05f;    //极性正抑制小车转向，负反馈
+float turn_Kd=0.4f;    //极性正抑制小车转向，负反馈
 
 float turn_limit = 300.0f; // 建议值在 300 到 800 之间，根据电机动力调整
 
+
+//暴露PWM1和PWM2给外部，实时查看PWM的值，检查车身突然无力摔倒的原因
+int16_t debug_pwm1 = 0;
+int16_t debug_pwm2 = 0;
 
 
 
 int16_t limit_pwm(int16_t pwm)//内部使用
 {
-    if(pwm>1500) pwm=1500;
-    if(pwm<-1500) pwm=-1500;
+    if(pwm>3200) pwm=3200;
+    if(pwm<-3200) pwm=-3200;
     return pwm;
 }
 
@@ -147,11 +151,22 @@ void control_motor(void)
     // 直立环和速度环已经通过串级合体了，这里只需加上转向环
     pwm1 = upright_out + turn_out;
     pwm2 = upright_out - turn_out;
+	
+	
 
     // 5. 【死区补偿】
     if(pwm1 >= 0) pwm1 += 140; else pwm1 -= 140;
     if(pwm2 >= 0) pwm2 += 140; else pwm2 -= 140;
 
+
+	pwm1=limit_pwm(pwm1); //双重限制，解决了PWM超限导致突然摔倒的错误
+	pwm2=limit_pwm(pwm2); 
+
+	//******************************
+	// 将最终计算出的PWM值存入全局变量，暴露给外部       总结：不是因为PWM超限的问题，而是因为电机本身有堵转保护，
+    debug_pwm1 = pwm1;								 //给PWM，但是轮子不转，过几秒后电机会立刻脱力					
+    debug_pwm2 = pwm2;
+	//********************************
 
     Motor1_SetSpeed(pwm1);
     Motor2_SetSpeed(pwm2);

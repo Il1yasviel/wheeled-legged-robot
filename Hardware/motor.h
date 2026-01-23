@@ -14,6 +14,11 @@ extern float turn_Kp;
 extern float turn_Kd;
 extern float mechanical_zero;
 
+
+extern int16_t debug_pwm1;
+extern int16_t debug_pwm2;
+
+
 void control_motor(void);
 
 void Motor_PID_Update_Task(void);

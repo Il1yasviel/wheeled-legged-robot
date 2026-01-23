@@ -16,13 +16,13 @@ float internal_current_sim_height = 83.0f;// 当前模拟高度
 //在外部传递一个目标期望翻滚角参数，然后身体应该自动趋向于设定的期望高度       （输入是当前翻滚角，输出是高度偏移量。）
 //定义局部期望翻滚角变量，定义角度环的Kp、Kd全局变量。已经有测得的翻滚角roll，翻滚角原始角速度数据gyrox
     
-float roll_Kp = 15.0f;   // 需要调试：每偏1度，腿伸缩多少mm    差值为20度的时候，输出最大的高度
+float roll_Kp = 0.5f;   // 需要调试：每偏1度，腿伸缩多少mm    差值为20度的时候，输出最大的高度
 float roll_Kd = 0.002f;  // 需要调试：阻尼，抑制震荡
 float target_roll_angle = 0.0f; // 默认为0度（水平平衡）
 
 
 // 5. 重心环参数 (X轴 - 前后平衡)
-float cog_Kp = 2.0f;   // 速度差越大，腿伸缩越多
+float cog_Kp = 0.5f;   // 速度差越大，腿伸缩越多
 float cog_Kd = 0.0f;   // 抑制前后晃动
 
 
@@ -47,21 +47,27 @@ void Motor_Set_Target_Height(float yL, float yR)
 
 //写一个翻滚角的PID角度环，控制身体左右倾斜
 
-// 内部使用的 PID 计算函数 (可以是 static，不给外部看)
 static float Roll_PID_Core(float current_roll, float gyro_roll_rate)
 {
-	
     float error = target_roll_angle - current_roll - roll_mechanical_zero;
+    float dead_zone_error = 0.0f;
 
-
-    // 2. 【核心】死区逻辑
-    // 如果误差的绝对值小于死区值 (例如 -3 < error < 3)
-    if (fabs(error) <= roll_dead_zone)
-    {
-		return 0.0f;
+    // --- 平滑死区逻辑 ---
+    if (error > roll_dead_zone) {
+        // 例如：误差 5.1，死区 5.0 -> 有效误差 0.1 (平滑过渡)
+        dead_zone_error = error - roll_dead_zone; 
+    }
+    else if (error < -roll_dead_zone) {
+        // 例如：误差 -5.1，死区 5.0 -> 有效误差 -0.1
+        dead_zone_error = error + roll_dead_zone;
+    }
+    else {
+        // 在死区内，直接返回0
+        return 0.0f;
     }
 
-    float output = (roll_Kp * error) + (roll_Kd * (-gyro_roll_rate));
+    // 使用减去死区后的 error 进行计算
+    float output = (roll_Kp * dead_zone_error) + (roll_Kd * (-gyro_roll_rate));
     return output;
 }
 

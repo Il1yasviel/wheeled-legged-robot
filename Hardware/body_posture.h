@@ -20,8 +20,8 @@
 #define H_MAX  137.0f   // 最高高度
 
 // PID 映射范围
-#define KP_AT_MIN  130.0f   // 高度83时的 Kp
-#define KP_AT_MAX  210.0f   // 高度137时的 Kp
+#define KP_AT_MIN  150.0f   // 高度83时的 Kp
+#define KP_AT_MAX  230.0f   // 高度137时的 Kp
 
 #define KD_AT_MIN  -0.25f   // 高度83时的 Kd
 #define KD_AT_MAX  -0.35f   // 高度137时的 Kd (建议高处阻尼大一点)
