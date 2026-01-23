@@ -1,7 +1,9 @@
 #include "body_posture.h"         
 
 // 【新增】死区阈值，默认 3.0 度
-float roll_dead_zone = 3.0f;
+float roll_dead_zone = 5.0f;
+float cog_dead_zone  = 5.0f;     // 【新增】重心环死区 (速度差小于此值，X轴不动)
+
 
 //用于接收坐标的全局变量 ---
 float cmd_xL, cmd_yL, cmd_xR, cmd_yR;
@@ -14,9 +16,16 @@ float internal_current_sim_height = 83.0f;// 当前模拟高度
 //在外部传递一个目标期望翻滚角参数，然后身体应该自动趋向于设定的期望高度       （输入是当前翻滚角，输出是高度偏移量。）
 //定义局部期望翻滚角变量，定义角度环的Kp、Kd全局变量。已经有测得的翻滚角roll，翻滚角原始角速度数据gyrox
     
-float roll_Kp = 2.0f;   // 需要调试：每偏1度，腿伸缩多少mm    差值为20度的时候，输出最大的高度
+float roll_Kp = 15.0f;   // 需要调试：每偏1度，腿伸缩多少mm    差值为20度的时候，输出最大的高度
 float roll_Kd = 0.002f;  // 需要调试：阻尼，抑制震荡
 float target_roll_angle = 0.0f; // 默认为0度（水平平衡）
+
+
+// 5. 重心环参数 (X轴 - 前后平衡)
+float cog_Kp = 2.0f;   // 速度差越大，腿伸缩越多
+float cog_Kd = 0.0f;   // 抑制前后晃动
+
+
 
 float roll_mechanical_zero = -2.85f;
 
@@ -56,6 +65,42 @@ static float Roll_PID_Core(float current_roll, float gyro_roll_rate)
     return output;
 }
 
+
+// 【新增】提供一个给 main.c 调用的接口来修改目标角度
+void Set_Target_Roll_Angle(float angle)
+{
+    target_roll_angle = angle;
+}
+
+
+//程序可以实时读取轮子的转速，
+//然后也会知道上位机设定的目标速度，
+//那么就可以使用目标速度减去当前轮速，
+//获得一个差值，然后使用PID算法来输出一个X的偏移量。
+//X为0时腿伸向最后边，X为44时，腿伸向最前边。
+//默认情况下X为22，也就是中间。所以可以把解析的x坐标换成 x+x_Offset，
+//这样在车子启动的时候和紧急刹车的时候，差值最大，然后腿部就会改变姿势从而改变重心。
+// 2. 重心 COG PID (控制前后 X 位置)
+// 2. 重心 COG PID (X轴) - 【新增死区逻辑】
+static float COG_PID_Core(float target_speed, float current_speed) {
+    float error = target_speed - current_speed;
+    
+    // 【新增】重心死区逻辑
+    // 如果速度误差很小（比如只是路面颠簸引起的编码器波动），不要调整重心
+    // 只有当真正的急加速或急刹车（误差很大）时，才动腿
+    if (fabs(error) <= cog_dead_zone) return 0.0f;
+
+    static float last_error = 0;
+    float output = (cog_Kp * error) + (cog_Kd * (error - last_error));
+    last_error = error;
+    return output;
+}
+
+
+
+
+
+
 /**
  * @brief  姿态平衡核心任务
  * @param  current_roll   当前翻滚角
@@ -63,30 +108,36 @@ static float Roll_PID_Core(float current_roll, float gyro_roll_rate)
  * @param  out_yL         [输出] 计算并限幅后的左腿高度
  * @param  out_yR         [输出] 计算并限幅后的右腿高度
  */
-void Body_Balance_Compute(float current_roll, float gyro_roll_rate, float *out_yL, float *out_yR)
+//还有两条腿在X轴方向的偏移量
+//传进来参数：当前速度和目标速度  用于重心环的计算，也就是腿在x轴的PID
+void Body_Balance_Compute(float current_roll, float gyro_roll_rate, 
+                          float target_speed, float current_speed,
+                          float *out_x, float *out_yL, float *out_yR)
 {
-    // 1. 计算 PID 偏移量 (offset)
+    // A. 计算左右平衡 (Y轴)
     float height_offset = Roll_PID_Core(current_roll, gyro_roll_rate);
 
-    // 2. 叠加基础高度 (cmd_yL/R 是全局变量，直接读取)
-    float temp_yL = cmd_yL - height_offset;
-    float temp_yR = cmd_yR + height_offset;
+    float temp_yL = cmd_yL - height_offset; 
+    float temp_yR = cmd_yR + height_offset; 
 
-    // 3. 饱和限幅 (关键逻辑)
-    if (temp_yL > LEG_MAX_HEIGHT) temp_yL = LEG_MAX_HEIGHT;
-    if (temp_yL < LEG_MIN_HEIGHT) temp_yL = LEG_MIN_HEIGHT;
-
-    if (temp_yR > LEG_MAX_HEIGHT) temp_yR = LEG_MAX_HEIGHT;
-    if (temp_yR < LEG_MIN_HEIGHT) temp_yR = LEG_MIN_HEIGHT;
+    // 限幅 Y
+    if (temp_yL > LEG_MAX_HEIGHT) temp_yL = LEG_MAX_HEIGHT; if (temp_yL < LEG_MIN_HEIGHT) temp_yL = LEG_MIN_HEIGHT;
+    if (temp_yR > LEG_MAX_HEIGHT) temp_yR = LEG_MAX_HEIGHT; if (temp_yR < LEG_MIN_HEIGHT) temp_yR = LEG_MIN_HEIGHT;
     
-    // 4. 将最终结果赋值给指针指向的变量，传回给调用者
+    // B. 计算重心调整 (X轴)
+    float x_offset = COG_PID_Core(target_speed, current_speed);
+    
+    // 逻辑：急刹车(Error负) -> x_offset负 -> 22 - (负) = 变大 -> 腿前伸
+    float temp_x = LEG_X_CENTER - x_offset; 
+    
+    // 限幅 X
+    if (temp_x > LEG_X_MAX) temp_x = LEG_X_MAX;
+    if (temp_x < LEG_X_MIN) temp_x = LEG_X_MIN;
+
+    // C. 输出
     *out_yL = temp_yL;
     *out_yR = temp_yR;
+    *out_x  = temp_x; 
 }
 
 
-// 【新增】提供一个给 main.c 调用的接口来修改目标角度
-void Set_Target_Roll_Angle(float angle)
-{
-    target_roll_angle = angle;
-}

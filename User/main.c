@@ -218,47 +218,50 @@ void messageTask(void *arg)
 
                     if(parsed_count == 4) // 确保成功解析了4个数字
                     {
-                        // 1. 调用核心解算函数
-                        // 注意：根据刚才修改的 IK_Compute，即使返回 0，Robot_IK 里也已经存入了计算出的“错误”数值
-                        uint8_t is_safe = IK_Compute(cmd_xL, cmd_yL, cmd_xR, cmd_yR);
-                        
-                        // 打印出刚刚算出的数学角度和舵机角度
-                        printf(">> [DEBUG] Input: L(%.0f, %.0f) R(%.0f, %.0f)\r\n", cmd_xL, cmd_yL, cmd_xR, cmd_yR);
-                        
-                        printf(">> LEFT : Math[A:%d, B:%d] -> Servo[ID2:%d, ID1:%d]\r\n", 
-                               Robot_IK.Math_Angle_Alpha_Left, 
-                               Robot_IK.Math_Angle_Beta_Left,
-                               Robot_IK.Angle_Servo_Left_Rear,  // 对应 Alpha
-                               Robot_IK.Angle_Servo_Left_Front  // 对应 Beta
-                              );
-                              
-                        printf(">> RIGHT: Math[A:%d, B:%d] -> Servo[ID4:%d, ID3:%d]\r\n", 
-                               Robot_IK.Math_Angle_Alpha_Right, 
-                               Robot_IK.Math_Angle_Beta_Right,
-                               Robot_IK.Angle_Servo_Right_Rear, 
-                               Robot_IK.Angle_Servo_Right_Front
-                              );
+//                        // 1. 调用核心解算函数
+//                        // 注意：根据刚才修改的 IK_Compute，即使返回 0，Robot_IK 里也已经存入了计算出的“错误”数值
+//                        uint8_t is_safe = IK_Compute(cmd_xL, cmd_yL, cmd_xR, cmd_yR);
+//                        
+//                        // 打印出刚刚算出的数学角度和舵机角度
+//                        printf(">> [DEBUG] Input: L(%.0f, %.0f) R(%.0f, %.0f)\r\n", cmd_xL, cmd_yL, cmd_xR, cmd_yR);
+//                        
+//                        printf(">> LEFT : Math[A:%d, B:%d] -> Servo[ID2:%d, ID1:%d]\r\n", 
+//                               Robot_IK.Math_Angle_Alpha_Left, 
+//                               Robot_IK.Math_Angle_Beta_Left,
+//                               Robot_IK.Angle_Servo_Left_Rear,  // 对应 Alpha
+//                               Robot_IK.Angle_Servo_Left_Front  // 对应 Beta
+//                              );
+//                              
+//                        printf(">> RIGHT: Math[A:%d, B:%d] -> Servo[ID4:%d, ID3:%d]\r\n", 
+//                               Robot_IK.Math_Angle_Alpha_Right, 
+//                               Robot_IK.Math_Angle_Beta_Right,
+//                               Robot_IK.Angle_Servo_Right_Rear, 
+//                               Robot_IK.Angle_Servo_Right_Front
+//                              );
 
-                        // 3. 【安全开关】只有返回 1 (安全) 才允许动舵机
-                        if (is_safe == 1)
-                        {
-                            //先根据解算的结果应用到每个舵机上
-                            Servo_Move(1, Robot_IK.Angle_Servo_Left_Front, 1000); 
-                            Servo_Move(2, Robot_IK.Angle_Servo_Left_Rear, 1000);  
-                            Servo_Move(3, Robot_IK.Angle_Servo_Right_Front, 1000);
-                            Servo_Move(4, Robot_IK.Angle_Servo_Right_Rear, 1000); 
-							
-                            //然后再根据高度值来获取平均高度，以便之后实时更新PID的系数值
-						    Motor_Set_Target_Height(cmd_yL, cmd_yR);	
-							
-                            printf(">> [STATUS] Safe -> Executing Move.\r\n");
-                        }
-                        else
-                        {
-                            // 4. 如果不安全，明确提示
-                            // 此时舵机不动，但你已经在上面看到了算出来的越界数值
-                            printf(">> [STATUS] UNSAFE LIMITS! Motors LOCKED.\r\n");
-                        }
+//                        // 3. 【安全开关】只有返回 1 (安全) 才允许动舵机
+//                        if (is_safe == 1)
+//                        {
+//                            //先根据解算的结果应用到每个舵机上
+//                            Servo_Move(1, Robot_IK.Angle_Servo_Left_Front, 1000); 
+//                            Servo_Move(2, Robot_IK.Angle_Servo_Left_Rear, 1000);  
+//                            Servo_Move(3, Robot_IK.Angle_Servo_Right_Front, 1000);
+//                            Servo_Move(4, Robot_IK.Angle_Servo_Right_Rear, 1000); 
+//							
+//                            //然后再根据高度值来获取平均高度，以便之后实时更新PID的系数值
+//						    Motor_Set_Target_Height(cmd_yL, cmd_yR);	
+//							
+//                            printf(">> [STATUS] Safe -> Executing Move.\r\n");
+//                        }
+//                        else
+//                        {
+//                            // 4. 如果不安全，明确提示
+//                            // 此时舵机不动，但你已经在上面看到了算出来的越界数值
+//                            printf(">> [STATUS] UNSAFE LIMITS! Motors LOCKED.\r\n");
+//                        }
+
+						Motor_Set_Target_Height(cmd_yL, cmd_yR);
+
                     }
                     else
                     {
@@ -407,10 +410,15 @@ void mainTask(void *arg)
 void balanceTask(void *arg)
 {
     TickType_t xLastWakeTime;
-    const TickType_t xFrequency = 10; // 10ms (100Hz) 控制频率，对舵机足够了
+    const TickType_t xFrequency = 50; 
     
-    // 局部变量
+    // 接收计算结果的变量，是驱动舵机的最终坐标*****
     float final_yL, final_yR;
+    float final_x; 
+	
+	
+	// 平均速度
+    float current_avg_speed = 0.0f;
     
     // 初始化时间
     xLastWakeTime = xTaskGetTickCount();
@@ -427,20 +435,30 @@ void balanceTask(void *arg)
         // 1. 严格控制周期
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
         
-        // 2. 计算姿态 PID (带入死区和方向修正)
-        Body_Balance_Compute(roll, gyrox, &final_yL, &final_yR);
+        // 1. 获取当前平均速度 (读取 data_read.h 里的全局变量)
+        current_avg_speed = (float)(speedLeft + speedRight) / 2.0f;
 
-        // 3. 逆运动学解算
-        uint8_t is_safe = IK_Compute(cmd_xL, final_yL, cmd_xR, final_yR);
+        // 2. 核心计算
+        // 传入：姿态、目标速度(Movement)、当前速度(current_avg_speed)
+        // 传出：final_x (前后重心), final_yL/R (左右高度)
+        Body_Balance_Compute(roll, gyrox, (float)Movement, current_avg_speed, 
+                             &final_x, &final_yL, &final_yR);
 
-        // 4. 驱动舵机 (如果解算成功)
+		
+		
+		//最终输出=上位机指令（基准）+PID计算结果（修正）  并不会覆盖基准指令，自动控制仅仅只在基准指令的基础上，添加修正量。
+		//逆运动学解算
+		//***********************************   核心部分，根据坐标来驱动舵机，这是自动化执行   
+        uint8_t is_safe = IK_Compute(final_x, final_yL, final_x, final_yR);
+        // 驱动舵机 (如果解算成功)
         if (is_safe)
         {
-            Servo_Move(1, Robot_IK.Angle_Servo_Left_Front, 25); //这里从1000ms换成了25ms，加快舵机的响应速度
-            Servo_Move(2, Robot_IK.Angle_Servo_Left_Rear, 25);  
-            Servo_Move(3, Robot_IK.Angle_Servo_Right_Front, 25);
-            Servo_Move(4, Robot_IK.Angle_Servo_Right_Rear, 25); 
+            Servo_Move(1, Robot_IK.Angle_Servo_Left_Front, 500); //这里从1000ms换成了25ms，加快舵机的响应速度
+            Servo_Move(2, Robot_IK.Angle_Servo_Left_Rear, 500);  
+            Servo_Move(3, Robot_IK.Angle_Servo_Right_Front, 500);
+            Servo_Move(4, Robot_IK.Angle_Servo_Right_Rear, 500); 
         }
+		//**********************************
     }
 }
 

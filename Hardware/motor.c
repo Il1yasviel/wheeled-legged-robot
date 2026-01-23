@@ -8,8 +8,8 @@ float upright_Kp=110.0f;  //极性+  65*0.6 39                25.0
 float upright_Kd=-0.25f;       //极性-   -0.32*0.6  -0.192    -0.15
 //速度环
 // 修改后的速度环参数（已转换）
-float cascade_speed_Kp =0; //0.267f; 
-float cascade_speed_Ki =0; //0.00133f;
+float cascade_speed_Kp =0.267f; 
+float cascade_speed_Ki =0.00133f;
 //转向环
 float turn_Kp=-10.0f;   //极性负 期望小车转向，正反馈
 float turn_Kd=0.05f;    //极性正抑制小车转向，负反馈
@@ -29,7 +29,7 @@ int16_t limit_pwm(int16_t pwm)//内部使用
 
 void Motor1_SetSpeed(int16_t pwm)//pwm 0-3200 静止-满速
 {
-    limit_pwm(pwm);
+    pwm=limit_pwm(pwm);    //忘记给PWM限定范围了，导致PWM几秒钟后就数值超限，导致小车突然无力摔倒。
     if(pwm>0)
     {
         TIM_SetCompare1(TIM3,3600-pwm);
@@ -53,7 +53,7 @@ void Motor1_SetSpeed(int16_t pwm)//pwm 0-3200 静止-满速
 
 void Motor2_SetSpeed(int16_t pwm)// -2000<=Speed<=2000
 {
-    limit_pwm(pwm);
+	pwm = limit_pwm(pwm); // 必须要把返回值赋给 pwm ！！！   忘记加限幅导致PWM值超过电机的PWM范围，于是电机会突然摔倒
     if(pwm>=0)
     {
         TIM_SetCompare2(TIM3,3600-pwm);
@@ -108,8 +108,8 @@ float speed_ring(int16_t encoder_left, int16_t encoder_right)
     float target_angle = (cascade_speed_Kp * Encoder) + (cascade_speed_Ki * Encoder_Integral);
     // 2. 【添加限幅】防止倾斜角度过大导致直接倒地
     // 建议范围在 10.0 到 15.0 度之间，根据你机器的重心高度来定
-    if(target_angle > 30.0f)  target_angle = 30.0f;  // 最大前倾 12 度
-    if(target_angle < -30.0f) target_angle = -30.0f; // 最大后仰 12 度
+    if(target_angle > 20.0f)  target_angle = 20.0f;  // 最大前倾 12 度
+    if(target_angle < -20.0f) target_angle = -20.0f; // 最大后仰 12 度
 
     if((pitch >= 80) || (pitch <= -80)) Encoder_Integral = 0;    
 
