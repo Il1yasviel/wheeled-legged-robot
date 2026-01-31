@@ -68,6 +68,23 @@ void USART2_SendString(char *str)
         while (USART_GetFlagStatus(USART2, USART_FLAG_TXE) == RESET);
     }
 }
+
+
+/**
+ * @brief 像 printf 一样通过串口2发送格式化数据
+ * @param fmt: 格式化字符串，例如 "Value: %d\r\n"
+ */
+void USART2_Printf(char *fmt, ...)
+{
+    char buffer[128]; // 临时缓冲区，确保不要溢出
+    va_list arg_ptr;
+    
+    va_start(arg_ptr, fmt);
+    vsnprintf(buffer, sizeof(buffer), fmt, arg_ptr);
+    va_end(arg_ptr);
+    
+    USART2_SendString(buffer);
+}
  
  
 

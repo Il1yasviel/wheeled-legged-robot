@@ -6,7 +6,7 @@ float pitch,roll,yaw;  //欧拉角
 short gyrox,gyroy,gyroz;//陀螺仪原始数据  gyroyf俯仰角速度用于PID的Kd项
 int16_t speedLeft=0;
 int16_t speedRight=0;
-int turnment=0; // 目标转向值，一般为0
+int16_t turnment=0; // 目标转向值，一般为0
 // 目标移动速度：0为原地平衡，正数前进，负数后退
 int16_t Movement = 0;
 

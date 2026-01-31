@@ -10,7 +10,7 @@ extern float pitch,roll,yaw;  //欧拉角
 extern short gyrox,gyroy,gyroz;//陀螺仪原始数据
 extern int16_t speedLeft;
 extern int16_t speedRight;
-extern int turnment; // 目标转向值，一般为0
+extern int16_t turnment; // 目标转向值，一般为0
 // 目标移动速度：0为原地平衡，正数前进，负数后退
 extern int16_t Movement;
 

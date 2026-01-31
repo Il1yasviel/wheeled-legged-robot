@@ -2,10 +2,10 @@
 
 
 //机械零点
-float mechanical_zero=-8.2f;//0.3
+float mechanical_zero=5.5f;//0.3
 //直立环
-float upright_Kp=150.0f;  //极性+  65*0.6 39                25.0
-float upright_Kd=-0.25f;       //极性-   -0.32*0.6  -0.192    -0.15
+float upright_Kp=225.0f;  //原150，乘上1.5倍
+float upright_Kd=-3.0f;       //原0.25，也乘上1.5倍
 //速度环
 // 修改后的速度环参数（已转换）
 float cascade_speed_Kp =0.267f; 
@@ -25,8 +25,8 @@ int16_t debug_pwm2 = 0;
 
 int16_t limit_pwm(int16_t pwm)//内部使用
 {
-    if(pwm>3200) pwm=3200;
-    if(pwm<-3200) pwm=-3200;
+    if(pwm>3200) pwm=3400;
+    if(pwm<-3200) pwm=-3400;
     return pwm;
 }
 
@@ -155,8 +155,8 @@ void control_motor(void)
 	
 
     // 5. 【死区补偿】
-    if(pwm1 >= 0) pwm1 += 140; else pwm1 -= 140;
-    if(pwm2 >= 0) pwm2 += 140; else pwm2 -= 140;
+    if(pwm1 >= 0) pwm1 += 250; else pwm1 -= 250;    //电池从3S换成了2S，死区从140修改成250
+    if(pwm2 >= 0) pwm2 += 250; else pwm2 -= 250;
 
 
 	pwm1=limit_pwm(pwm1); //双重限制，解决了PWM超限导致突然摔倒的错误

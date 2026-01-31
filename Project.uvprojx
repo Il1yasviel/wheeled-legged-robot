@@ -835,6 +835,16 @@
               <FileType>5</FileType>
               <FilePath>.\Hardware\body_posture.h</FilePath>
             </File>
+            <File>
+              <FileName>process_command.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Hardware\process_command.c</FilePath>
+            </File>
+            <File>
+              <FileName>process_command.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Hardware\process_command.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

@@ -1,8 +1,15 @@
 #include "body_posture.h"         
 
+
+// 定义滤波系数，建议范围 0.1 ~ 0.4
+// 0.1 表示 10% 原始信号 + 90% 上次信号（滤波强，延迟高）
+// 0.8 表示 80% 原始信号 + 20% 上次信号（滤波弱，延迟低）
+#define ROLL_FILTER_ALPHA 0.95f 
+
+
 // 【新增】死区阈值，默认 3.0 度
-float roll_dead_zone = 5.0f;
-float cog_dead_zone  = 5.0f;     // 【新增】重心环死区 (速度差小于此值，X轴不动)
+float roll_dead_zone = 3.0f;
+float cog_dead_zone  = 3.0f;     // 【新增】重心环死区 (速度差小于此值，X轴不动)
 
 
 //用于接收坐标的全局变量 ---
@@ -16,13 +23,13 @@ float internal_current_sim_height = 83.0f;// 当前模拟高度
 //在外部传递一个目标期望翻滚角参数，然后身体应该自动趋向于设定的期望高度       （输入是当前翻滚角，输出是高度偏移量。）
 //定义局部期望翻滚角变量，定义角度环的Kp、Kd全局变量。已经有测得的翻滚角roll，翻滚角原始角速度数据gyrox
     
-float roll_Kp = 0.5f;   // 需要调试：每偏1度，腿伸缩多少mm    差值为20度的时候，输出最大的高度
-float roll_Kd = 0.002f;  // 需要调试：阻尼，抑制震荡
+float roll_Kp = 1.5f;   // 需要调试：每偏1度，腿伸缩多少mm    差值为20度的时候，输出最大的高度
+float roll_Kd = 0.0f;  // 需要调试：阻尼，抑制震荡
 float target_roll_angle = 0.0f; // 默认为0度（水平平衡）
 
 
 // 5. 重心环参数 (X轴 - 前后平衡)
-float cog_Kp = 0.5f;   // 速度差越大，腿伸缩越多
+float cog_Kp = 0.08f;   // 速度差越大，腿伸缩越多
 float cog_Kd = 0.0f;   // 抑制前后晃动
 
 
@@ -120,8 +127,14 @@ void Body_Balance_Compute(float current_roll, float gyro_roll_rate,
                           float target_speed, float current_speed,
                           float *out_x, float *out_yL, float *out_yR)
 {
-    // A. 计算左右平衡 (Y轴)
-    float height_offset = Roll_PID_Core(current_roll, gyro_roll_rate);
+    // 1. 一阶滤波处理
+    static float last_filtered_roll = 0.0f; // 静态变量，保留上次计算结果
+    float filtered_roll = ROLL_FILTER_ALPHA * current_roll + (1.0f - ROLL_FILTER_ALPHA) * last_filtered_roll;
+    last_filtered_roll = filtered_roll; // 更新历史记录
+
+    // 2. 使用滤波后的值进行 Y 轴平衡计算
+    // 注意：这里传入的是 filtered_roll 而不是原始的 current_roll
+    float height_offset = Roll_PID_Core(filtered_roll, gyro_roll_rate);
 
     float temp_yL = cmd_yL - height_offset; 
     float temp_yR = cmd_yR + height_offset; 
