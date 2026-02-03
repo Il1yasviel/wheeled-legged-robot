@@ -1,9 +1,23 @@
  #include "USART2.h"
+ 
+ 
+ 
+// 0: 初始化模式 (不锁，一直收，防止漏掉 OK)
+// 1: 运行模式 (收到换行就锁，专用于处理 TCP 数据)
+//volatile uint8_t USART2_Lock_Mode = 0; 
+ 
+ 
+// 0: 空闲/接收中 (允许中断写入)
+// 1: 锁定/处理中 (中断禁止写入，直接丢弃新数据)
+//volatile uint8_t Data_Locked = 0; 
+extern char USART2_RxBuffer[]; // 引用外部数组
+uint8_t USART2_RxIndex;
+
+ 
 
 char USART2_RxBuffer[256]; // 接收缓冲区
 volatile uint8_t USART2_RxFlag = 0; // 增加 volatile 关键字  接收完成标志位
-// 【新增】定义全局下标变量
-volatile uint16_t USART2_RxIndex = 0; 
+
 
  
  void USART2_Init(void)
@@ -86,6 +100,56 @@ void USART2_Printf(char *fmt, ...)
     USART2_SendString(buffer);
 }
  
+
+
+//void USART2_IRQHandler(void)
+//{
+//    if(USART_GetITStatus(USART2, USART_IT_RXNE) != RESET)
+//    {
+//        uint8_t res = USART_ReceiveData(USART2);
+//		
+//		
+//		// 【模式 0：初始化模式】(兼容 AT 指令的多行回复)
+//        if (USART2_Lock_Mode == 0)
+//        {
+//            USART2_RxBuffer[USART2_RxIndex++] = res;
+//            // 防止溢出，循环覆盖
+//            if (USART2_RxIndex >= 250) USART2_RxIndex = 0; 
+//			USART2_RxFlag = 1; // 【关键修正】告诉驱动程序“有一行数据收完了”
+//            
+//            // 在初始化模式下，我们不设置 Data_Locked，
+//            // 而是依靠 ESP8266_ConnectWiFi 函数内部的延时和判断来处理数据。
+//        }
+//		
+//		
+//		
+//        else
+//		{
+//			// 【核心逻辑】只有在“未锁定”状态下，才允许接收数据
+//			if (Data_Locked == 0) 
+//			{
+//				USART2_RxBuffer[USART2_RxIndex++] = res;
+
+//				// 假设 WiFi 发来的数据以 '\n' (换行符) 结尾
+//				// 或者判断缓冲区快满了
+//				if (res == '\n' || USART2_RxIndex >= 250) 
+//				{
+//					USART2_RxBuffer[USART2_RxIndex] = '\0'; // 添加字符串结束符
+//					Data_Locked = 1; // 立即上锁！通知主任务去处理
+//				}
+//			}
+//			else 
+//			{
+//				// 如果 Data_Locked == 1
+//				// 此时发来的所有数据，直接丢弃！
+//				// 这样能保护 Buffer 里的数据绝对不被破坏
+//			}
+//		}
+//        
+//        USART_ClearITPendingBit(USART2, USART_IT_RXNE);
+//    }
+//}
+
  
 
 void USART2_IRQHandler(void)

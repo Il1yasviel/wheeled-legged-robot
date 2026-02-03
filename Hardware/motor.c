@@ -2,19 +2,19 @@
 
 
 //机械零点
-float mechanical_zero=5.5f;//0.3
+float mechanical_zero=4.5f;//0.3
 //直立环
-float upright_Kp=225.0f;  //原150，乘上1.5倍
+float upright_Kp=300.0f;  //原150，乘上1.5倍
 float upright_Kd=-3.0f;       //原0.25，也乘上1.5倍
 //速度环
 // 修改后的速度环参数（已转换）
 float cascade_speed_Kp =0.267f; 
 float cascade_speed_Ki =0.00133f;
 //转向环
-float turn_Kp=-10.0f;   //极性负 期望小车转向，正反馈
+float turn_Kp=-15.0f;   //极性负 期望小车转向，正反馈
 float turn_Kd=0.4f;    //极性正抑制小车转向，负反馈
 
-float turn_limit = 300.0f; // 建议值在 300 到 800 之间，根据电机动力调整
+float turn_limit = 500.0f; // 建议值在 300 到 800 之间，根据电机动力调整
 
 
 //暴露PWM1和PWM2给外部，实时查看PWM的值，检查车身突然无力摔倒的原因
@@ -155,8 +155,8 @@ void control_motor(void)
 	
 
     // 5. 【死区补偿】
-    if(pwm1 >= 0) pwm1 += 250; else pwm1 -= 250;    //电池从3S换成了2S，死区从140修改成250
-    if(pwm2 >= 0) pwm2 += 250; else pwm2 -= 250;
+    if(pwm1 >= 0) pwm1 += 150; else pwm1 -= 150;    //电池从3S换成了2S，死区从140修改成250
+    if(pwm2 >= 0) pwm2 += 150; else pwm2 -= 150;
 
 
 	pwm1=limit_pwm(pwm1); //双重限制，解决了PWM超限导致突然摔倒的错误

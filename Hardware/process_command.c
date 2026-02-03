@@ -48,7 +48,56 @@ void Process_Command(char *cmd_str)
     int val = atoi(&cmd_str[1]);
 
     switch (cmd)
-    {
+    {		
+		// ===========================================================
+        // 【新增】全能控制指令 (解决TCP分包导致的指令不同步问题)
+        // 格式: #<速度>,<转向>,<机械零点>,<高度>,<翻滚角>
+        // 示例: #100,-30,0.5,160,2.0
+        // ===========================================================
+        case '#':
+        {
+            int spd_in, turn_in;
+            float mech_z_in, height_in, roll_in;
+
+            // 使用 sscanf 解析5个参数
+            // %d: 整数, %f: 浮点数
+            if (sscanf(&cmd_str[1], "%d,%d,%f,%f,%f", 
+                       &spd_in,     // 速度
+                       &turn_in,    // 转向
+                       &mech_z_in,  // 机械零点
+                       &height_in,  // 高度
+                       &roll_in     // 翻滚角
+                       ) == 5)
+            {
+                // 1. 更新运动参数
+                Movement = (int16_t)spd_in;
+                turnment = (int16_t)turn_in;
+
+                // 2. 更新机械零点 (用于平衡环微调)
+                mechanical_zero = mech_z_in;
+
+                // 3. 更新高度 (同时设置左右腿高度)
+                // 注意：这里假设高度是整体调整，如果需要独立腿高，需要传两个参数
+                cmd_yL = height_in;
+                cmd_yR = height_in;
+                Motor_Set_Target_Height(cmd_yL, cmd_yR);
+
+                // 4. 更新翻滚角
+                Set_Target_Roll_Angle(roll_in);
+
+                // 调试打印 (可选，高频发送时建议注释掉以节省CPU)
+                // printf(">> [ALL] V:%d T:%d Z:%.2f H:%.1f R:%.1f\r\n", 
+                //        Movement, turnment, mechanical_zero, cmd_yL, roll_in);
+            }
+            else
+            {
+                // 解析失败（参数数量不对）
+                printf(">> Error: Format #Speed,Turn,Zero,Height,Roll\r\n");
+            }
+            break;
+        }
+		
+		
         // ===========================
         // 运动控制
         // ===========================

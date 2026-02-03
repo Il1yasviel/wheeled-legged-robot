@@ -25,6 +25,10 @@
 #include "body_posture.h"
 #include "process_command.h"
 
+
+// 定义超时时间（毫秒），500ms 到 1000ms
+#define CMD_TIMEOUT_MS  150 
+
 // 任务句柄
 TaskHandle_t infTaskHandler;
 TaskHandle_t mainTaskHandler;
@@ -50,17 +54,33 @@ void messageTask(void *arg)
     // 必须定义在 while 循环外面，否则每次循环都会被清零
     int Last_Servo_ID = 0;     // 默认ID 0
     int Last_Servo_Angle = 0;  // 默认角度 0
+	
+	
+	// 初始化
+//    Data_Locked = 0; 
+//    USART2_RxIndex = 0;
+	
 
 	//AT指令
 	uint8_t status = ESP8266_ConnectWiFi();
 	
-	    if (status == 0)
+	if (status == 0)
     {
         printf("WiFi Connect Success!\r\n");
 		
 		// 【新增】连接成功后，启动 TCP 服务
         vTaskDelay(pdMS_TO_TICKS(500)); // 稍作延时
         ESP8266_StartTCPServer();
+		
+		printf(">> Switch to TCP Lock Mode.\r\n");
+        
+        // 清空一下之前的缓存，准备干净的开始
+        memset(USART2_RxBuffer, 0, sizeof(USART2_RxBuffer));
+        USART2_RxIndex = 0;
+//        Data_Locked = 0;
+//        
+//        // 开启锁模式
+//        USART2_Lock_Mode = 1; 
     }
     else
     {
@@ -69,9 +89,13 @@ void messageTask(void *arg)
         printf("WiFi Connect Failed! Error Code: %d\r\n", status);
     }
 	
+	
+	// 【新增】定义变量记录最后一次收到指令的时间
+    TickType_t Last_Cmd_Time = xTaskGetTickCount();
+	
     while(1) 
     {		
-		        // 1. 处理 WiFi (USART2)
+		// 1. 处理 WiFi (USART2)
         if (USART2_RxFlag == 1)
         {
             char *pIPD = strstr(USART2_RxBuffer, "+IPD");
@@ -82,20 +106,74 @@ void messageTask(void *arg)
                 {
                     // 【调用】统一处理函数
                     Process_Command(pColon + 1);
+					
+				   // 【新增】收到有效指令，更新时间戳
+				   Last_Cmd_Time = xTaskGetTickCount(); 
                 }
             }
             USART2_RxIndex = 0; 
             USART2_RxFlag = 0; 
             memset(USART2_RxBuffer, 0, sizeof(USART2_RxBuffer));
+			
+						
         }
 
-        // 2. 处理 蓝牙/串口3 (USART3)
+
+//		if (Data_Locked == 1)
+//		{
+//            char *pIPD = strstr(USART2_RxBuffer, "+IPD");
+//            if (pIPD != NULL)
+//            {
+//                char *pColon = strchr(pIPD, ':');
+//                if (pColon != NULL)
+//                {
+//                    // 解析命令
+//                    Process_Command(pColon + 1);
+//                    
+//                    // 喂狗（重置超时时间）
+//                    Last_Cmd_Time = xTaskGetTickCount();
+//                }
+//            }
+//			// -----------------------------------------------------
+//            // 处理完毕，准备开锁
+//            // -----------------------------------------------------
+//            // 1. 清零索引
+//            USART2_RxIndex = 0; 
+//            // 2. 清空Buffer (其实只要第一个字符置0即可)
+//            USART2_RxBuffer[0] = '\0'; 
+//		    memset(USART2_RxBuffer, 0, sizeof(USART2_RxBuffer));
+//            // 3.开锁！允许中断继续接收新数据
+//            Data_Locked = 0; 
+//			
+//		}
+
+        // 2. 处理 串口3 (USART3)
         if (USART3_RxFlag == 1)
         {
             // 【调用】统一处理函数
             Process_Command(Serial_RxPacket);
             USART3_RxFlag = 0; 
+			
+		   // 【新增】收到有效指令，更新时间戳
+            Last_Cmd_Time = xTaskGetTickCount(); 
         }
+		
+		// ===========================================================
+        // 【新增】超时安全保护逻辑 (软件看门狗)
+        // ===========================================================
+        // 计算：(当前系统时间 - 上次收到指令时间) 是否大于 设定阈值
+        if ((xTaskGetTickCount() - Last_Cmd_Time) > pdMS_TO_TICKS(CMD_TIMEOUT_MS))
+        {
+            // 只有当车还在动的时候才执行停止，避免重复赋值
+            if (Movement != 0 || turnment != 0)
+            {
+                Movement = 0;
+                turnment = 0;
+                printf(">> [Safety] Signal Lost! Auto Stop.\r\n");
+            }
+        }
+        // ===========================================================
+		
 
         // 打印状态 (Last_Servo_ID 和 Last_Servo_Angle 会自动从 process_command.c 获取)
         printf("P:%.2f | R:%.2f | M:%d | SID:%d | Ang:%d\r\n", 
