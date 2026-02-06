@@ -2,19 +2,19 @@
 
 
 //机械零点
-float mechanical_zero=4.5f;//0.3
+float mechanical_zero=-4.8f;//0.3
 //直立环
-float upright_Kp=300.0f;  //原150，乘上1.5倍
-float upright_Kd=-3.0f;       //原0.25，也乘上1.5倍
+float upright_Kp=600.0f;  //原150，乘上1.5倍
+float upright_Kd=-7.5f;       //原0.25，也乘上1.5倍
 //速度环
 // 修改后的速度环参数（已转换）
-float cascade_speed_Kp =0.267f; 
-float cascade_speed_Ki =0.00133f;
+float cascade_speed_Kp =0.267f;//0.267f; 
+float cascade_speed_Ki =0.00133f;//0.00133f;
 //转向环
 float turn_Kp=-15.0f;   //极性负 期望小车转向，正反馈
 float turn_Kd=0.4f;    //极性正抑制小车转向，负反馈
 
-float turn_limit = 500.0f; // 建议值在 300 到 800 之间，根据电机动力调整
+float turn_limit = 1000.0f; // 建议值在 300 到 800 之间，根据电机动力调整
 
 
 //暴露PWM1和PWM2给外部，实时查看PWM的值，检查车身突然无力摔倒的原因
@@ -25,8 +25,8 @@ int16_t debug_pwm2 = 0;
 
 int16_t limit_pwm(int16_t pwm)//内部使用
 {
-    if(pwm>3200) pwm=3400;
-    if(pwm<-3200) pwm=-3400;
+    if(pwm>3400) pwm=3400;
+    if(pwm<-3400) pwm=-3400;
     return pwm;
 }
 

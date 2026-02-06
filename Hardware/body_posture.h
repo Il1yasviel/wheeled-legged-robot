@@ -20,11 +20,11 @@
 #define H_MAX  137.0f   // 最高高度
 
 // PID 映射范围 (全部乘以 1.5)
-#define KP_AT_MIN  300.0f    // 原 150.0 -> 225.0
-#define KP_AT_MAX  460.0f    // 原 230.0 -> 345.0 (或者保守点 320)
+#define KP_AT_MIN  600.0f    // 原 150.0 -> 225.0
+#define KP_AT_MAX  800.0f    // 原 230.0 -> 345.0 (或者保守点 320)
 
-#define KD_AT_MIN  -3.0f   // 原 -0.25 -> -0.375
-#define KD_AT_MAX  -4.2f   // 原 -0.35 -> -0.525
+#define KD_AT_MIN  -7.5f   // 原 -0.25 -> -0.375
+#define KD_AT_MAX  -9.5f   // 原 -0.35 -> -0.525
 
 
 

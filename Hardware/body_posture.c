@@ -29,7 +29,7 @@ float target_roll_angle = 0.0f; // 默认为0度（水平平衡）
 
 
 // 5. 重心环参数 (X轴 - 前后平衡)
-float cog_Kp = 0.08f;   // 速度差越大，腿伸缩越多
+float cog_Kp = 2.0f;   // 速度差越大，腿伸缩越多
 float cog_Kd = 0.0f;   // 抑制前后晃动
 
 

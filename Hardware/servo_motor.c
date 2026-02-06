@@ -46,7 +46,7 @@ void Servo_Move(uint8_t id, uint8_t angle, uint16_t time_ms)
 
     // 调用上面写好的发送函数
     Servo_Transmit(command_packet, sizeof(command_packet));
-	delay_ms(50);
+	delay_ms(10);
 }
 
 
@@ -62,3 +62,4 @@ void servo_motor_position_Init(void)
 	Servo_Move(4, 100, 1000);
 	 delay_ms(50);
 }
+

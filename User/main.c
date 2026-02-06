@@ -534,7 +534,7 @@ void mainTask(void *arg)
 void balanceTask(void *arg)
 {
     TickType_t xLastWakeTime;
-    const TickType_t xFrequency = 50; 
+    const TickType_t xFrequency = 40; 
     
     // 接收计算结果的变量，是驱动舵机的最终坐标*****
     float final_yL, final_yR;
@@ -550,7 +550,7 @@ void balanceTask(void *arg)
     // 初始化逆解
     IK_Init(); 
     
-    // 【关键】高度初始化 (必须是110，给活动空间)
+    // 高度初始化 (处在中间位置，便于活动)  
     cmd_xL = 22.0f; cmd_yL = 110.0f;
     cmd_xR = 22.0f; cmd_yR = 110.0f;
 
