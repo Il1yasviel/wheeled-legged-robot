@@ -164,7 +164,11 @@ void USART2_IRQHandler(void)
             // 收到什么就存什么
             USART2_RxBuffer[USART2_RxIndex++] = RxData;
         }
-
+        else 
+        {
+            // 【新增防抱死】：如果满了还没等到 \n，说明数据出错了，强制清零重新接
+            USART2_RxIndex = 0;
+        }
         // 1. 判断是否为结束符 (ESP8266 发送的是 \r\n)
         // 这里的逻辑改为：收到换行符，置位标志位，但【不清零下标】
         if (RxData == '\n') // 收到换行

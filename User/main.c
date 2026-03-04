@@ -70,9 +70,10 @@ void messageTask(void *arg)
 		
 		// 【新增】连接成功后，启动 TCP 服务
         vTaskDelay(pdMS_TO_TICKS(500)); // 稍作延时
-        ESP8266_StartTCPServer();
+        //ESP8266_StartTCPServer();
+        ESP8266_StartUDP();
 		
-		printf(">> Switch to TCP Lock Mode.\r\n");
+		printf(">> Switch to UDP Lock Mode.\r\n");
         
         // 清空一下之前的缓存，准备干净的开始
         memset(USART2_RxBuffer, 0, sizeof(USART2_RxBuffer));

@@ -141,7 +141,7 @@ void control_motor(void)
     // 3. 【转向环】计算转向补偿 (根据你最初代码的逻辑)
     // 这里简单处理：如果没有转向需求(turnment=0)，则用 gyroz 抑制自旋
     if(turnment == 0) turn_out = turn_Kd * gyroz; 
-    else turn_out = turn_Kp * turnment;
+    else turn_out = turn_out = (turn_Kp * turnment) - (turn_Kd * gyroz);
 	
 	// --- 【转向限速核心代码】 ---
     if(turn_out > turn_limit)  turn_out = turn_limit;

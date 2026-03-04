@@ -7,7 +7,7 @@
  */
 void ESP8266_ClearBuffer(void) {
     memset(USART2_RxBuffer, 0, 256);
-    USART2_RxFlag = 0;
+    USART2_RxFlag = 0;   //通知main程序处理
     
     // 【新增】必须在这里手动把下标归零
     USART2_RxIndex = 0; 
@@ -106,6 +106,64 @@ void ESP8266_StartTCPServer(void)
     else
     {
         printf(">> [ESP] Error: Server Start Failed\r\n");
+    }
+}
+
+
+/**
+ * @brief 开启 UDP 监听模式
+ */
+void ESP8266_StartUDP(void)
+{
+    printf(">> [ESP] Config UDP Mode...\r\n");
+    
+    // 刚连上 WiFi，稍微缓一下
+    vTaskDelay(pdMS_TO_TICKS(1000)); 
+
+    // 1. 获取并打印 IP 地址 (这部分和之前一模一样，为了看本机的 IP)
+    printf(">> [ESP] Requesting IP Info...\r\n");
+    ESP8266_ClearBuffer();             
+    USART2_SendString("AT+CIFSR\r\n"); 
+    
+    vTaskDelay(pdMS_TO_TICKS(1000)); 
+
+    if(USART2_RxFlag)
+    {
+        printf("==========================================\r\n");
+        printf(">> ESP8266 RESPONSE: \r\n%s\r\n", USART2_RxBuffer);
+        printf("==========================================\r\n");
+    }
+    else
+    {
+        printf(">> [ESP] Warning: No response!\r\n");
+    }
+
+    // ========================================================
+    // 2. 【核心修改区】把开启 TCP Server 的指令，换成开启 UDP 的指令
+    // ========================================================
+    
+    // 第一步：依然需要开启多连接模式
+    if(ESP8266_SendCmd("AT+CIPMUX=1", "OK", 1000) != 0)
+    {
+        printf(">> [ESP] Error: CIPMUX Failed\r\n");
+    }
+    
+    // 第二步：建立 UDP 传输通道 (重点是这句！)
+    // 参数解释：
+    // 0: 通道号 (多连接模式下的编号)
+    // "UDP": 协议类型
+    // "0.0.0.0": 远端 IP (设为 0.0.0.0 表示我不挑人，谁给我发都行)
+    // 0: 远端端口 (不限制)
+    // 8080: 本地监听端口 (你的上位机/APP就要往这个端口发数据)
+    // 2: 模式 (对端可变，方便小车给不同的手机原路回传数据)
+    // 把远端端口从 0 改成 8080 (或者任意非0数字)
+    if(ESP8266_SendCmd("AT+CIPSTART=0,\"UDP\",\"0.0.0.0\",8080,8080,2", "OK", 1000) == 0)
+    {
+        printf(">> [ESP] UDP Started! Listening on Port: 8080\r\n");
+    }
+    else
+    {
+        printf(">> [ESP] Error: UDP Start Failed\r\n");
     }
 }
 
