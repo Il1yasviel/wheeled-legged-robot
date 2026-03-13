@@ -1,5 +1,5 @@
 #include "motor.h"
-
+#include <math.h>
 
 //机械零点
 float mechanical_zero=-5.3f;//0.3
@@ -97,55 +97,80 @@ int16_t upright_ring(float Angle,float Gyro, float Target_Angle)
 float speed_ring(int16_t encoder_left, int16_t encoder_right)
 {  
     static float Encoder_Integral, Encoder;
+    static float current_movement = 0.0f; 
+    
     float current_speed = (encoder_left + encoder_right);
     float speed_err;
 
-    // 1. 常规行驶时的速度偏差
-    speed_err = current_speed - Movement; 
+    float step; 
     
-    if (Movement == 0)
+    // 判断指令是否在“对抗”当前的车身运动（主动反方向打摇杆救车）
+    // 如果你在往前滑 (current_speed > 2)，但摇杆往后打 (Movement < 0)
+    // 或者你在往后溜 (current_speed < -2)，但摇杆往前打 (Movement > 0)
+    if ((Movement > 0 && current_speed < -2) || (Movement < 0 && current_speed > 2))
     {
-        // 检查 1：如果车还在快速滑行（速度绝对值 > 10）
+        // 直接给出极大的步长，没有延迟，瞬间出腿抵消！
+        step = 50.0f; 
+    }
+    else
+    {
+        // 顺着方向加速时，保持优雅，防止向后猛踹引发暴冲
+        step = 1.5f; 
+    }
+
+    // 执行斜坡运算
+    if (current_movement < Movement) current_movement += step;
+    else if (current_movement > Movement) current_movement -= step;
+    
+    // 消除逼近误差
+    if (fabs((int)(Movement - current_movement)) <= step) 
+    {
+        current_movement = Movement;
+    }
+
+    // 1. 常规行驶时的速度偏差
+    speed_err = current_speed - current_movement; 
+    
+    // 只有当遥控器归零，且平滑速度也完全降到 0 时，才启动暴力手刹
+    if (Movement == 0 && current_movement == 0)
+    {
         if (current_speed > 10 || current_speed < -10)
         {
-            //故意放大速度误差 45 倍！
-            // 这会骗过直立环，让轮子瞬间往前猛冲一步，迫使车身快速后仰，利用重力急刹车。
             speed_err = current_speed * 45.0f; 
+        }
+        else if (current_speed > 5 || current_speed < -5)
+        {
+            speed_err = current_speed * 10.0f; 
         }
         else
         {
-            // 检查 2：速度已经非常小了（进入 -5 到 5 的微动区间）
-            // 说明车已经刹停，此时进入【驻车死区】
             if (current_speed >= -5 && current_speed <= 5)
             {
-                speed_err = 0; // 彻底切断误差输入，防止车身在原地前后哆嗦
-                
-                // 缓慢泄掉之前积累的力，防止“卡手”突变
+                speed_err = 0; 
                 Encoder_Integral *= 0.9f; 
             }
         }
     }
-    // =======================================================
 
-    // 一阶低通滤波器 (让动作更顺滑)
+
+    // 一阶低通滤波器
     Encoder *= 0.7f;                
     Encoder += speed_err * 0.3f;    
 
     // 积分累加
     Encoder_Integral += Encoder;   
     
-    // 积分限幅 (防止持续滑翔)，值给得太大会猛冲，给小又无力。
+    // 积分限幅 (紧紧勒住，防止憋大招暴走)
     if(Encoder_Integral > 500) Encoder_Integral = 500;
     if(Encoder_Integral < -500) Encoder_Integral = -500; 
 
     // 计算出直立环的期望目标角度
     float target_angle = (cascade_speed_Kp * Encoder) + (cascade_speed_Ki * Encoder_Integral);
     
-    // 限幅保护
+    // 限幅保护保命
     if(target_angle > 12.0f)  target_angle = 12.0f;  
     if(target_angle < -12.0f) target_angle = -12.0f; 
 
-    // 倾角过大时摔倒保护
     if((pitch >= 80) || (pitch <= -80)) Encoder_Integral = 0;    
 
     return target_angle; 
