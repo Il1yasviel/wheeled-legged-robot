@@ -2,16 +2,16 @@
 
 
 //机械零点
-float mechanical_zero=-4.8f;//0.3
+float mechanical_zero=-5.3f;//0.3
 //直立环
-float upright_Kp=600.0f;  //原150，乘上1.5倍
-float upright_Kd=-7.5f;       //原0.25，也乘上1.5倍
+float upright_Kp=400.0f;  //原150，乘上1.5倍
+float upright_Kd=-1.8f;       //原0.25，也乘上1.5倍
 //速度环
 // 修改后的速度环参数（已转换）
 float cascade_speed_Kp =0.267f;//0.267f; 
 float cascade_speed_Ki =0.00133f;//0.00133f;
 //转向环
-float turn_Kp=-15.0f;   //极性负 期望小车转向，正反馈
+float turn_Kp=-10.5f;   //极性负 期望小车转向，正反馈
 float turn_Kd=0.4f;    //极性正抑制小车转向，负反馈
 
 float turn_limit = 1000.0f; // 建议值在 300 到 800 之间，根据电机动力调整
@@ -89,35 +89,77 @@ int16_t upright_ring(float Angle,float Gyro, float Target_Angle)
 	 return pwm_upright;
 }
 
-//速度环  返回的是直立环的目标角度
+
+//发现一个问题，就是停止的时候总是会滑翔，发现是腿部助跑后，归位的太慢了，然后就在停止的时候让轮子加速跑，从而加快腿部归到原位，从而减少滑翔的影响
+//例如向前加速的时候，腿部向后蹬，重心在前面，然后突然停止的时候，腿部会向前回归到原位，速度要是慢的话，就会一直滑翔。这时候轮子和腿一直向前冲，
+//让重心快速落到机器人的中心，达到快速停止的效果。
 // 速度环：直接输出目标角度
 float speed_ring(int16_t encoder_left, int16_t encoder_right)
 {  
     static float Encoder_Integral, Encoder;
-    int16_t Encoder_Least;
+    float current_speed = (encoder_left + encoder_right);
+    float speed_err;
 
-    Encoder_Least = (encoder_left + encoder_right) - Movement; // 目标速度为Movement
+    // 1. 常规行驶时的速度偏差
+    speed_err = current_speed - Movement; 
     
-    // 一阶低通滤波器
-    Encoder *= 0.7f;                
-    Encoder += Encoder_Least * 0.3f;    
+    if (Movement == 0)
+    {
+        // 检查 1：如果车还在快速滑行（速度绝对值 > 10）
+        if (current_speed > 10 || current_speed < -10)
+        {
+            //故意放大速度误差 45 倍！
+            // 这会骗过直立环，让轮子瞬间往前猛冲一步，迫使车身快速后仰，利用重力急刹车。
+            speed_err = current_speed * 45.0f; 
+        }
+        else
+        {
+            // 检查 2：速度已经非常小了（进入 -5 到 5 的微动区间）
+            // 说明车已经刹停，此时进入【驻车死区】
+            if (current_speed >= -5 && current_speed <= 5)
+            {
+                speed_err = 0; // 彻底切断误差输入，防止车身在原地前后哆嗦
+                
+                // 缓慢泄掉之前积累的力，防止“卡手”突变
+                Encoder_Integral *= 0.9f; 
+            }
+        }
+    }
+    // =======================================================
 
+    // 一阶低通滤波器 (让动作更顺滑)
+    Encoder *= 0.7f;                
+    Encoder += speed_err * 0.3f;    
+
+    // 积分累加
     Encoder_Integral += Encoder;   
     
-    // 积分限幅
-    if(Encoder_Integral > 2000) Encoder_Integral = 2000;
-    if(Encoder_Integral < -2000) Encoder_Integral = -2000; 
+    // 积分限幅 (防止持续滑翔)，值给得太大会猛冲，给小又无力。
+    if(Encoder_Integral > 500) Encoder_Integral = 500;
+    if(Encoder_Integral < -500) Encoder_Integral = -500; 
 
-    // 【一步到位】直接使用计算好的新系数求出目标角度
+    // 计算出直立环的期望目标角度
     float target_angle = (cascade_speed_Kp * Encoder) + (cascade_speed_Ki * Encoder_Integral);
-    // 2. 【添加限幅】防止倾斜角度过大导致直接倒地
-    // 建议范围在 10.0 到 15.0 度之间，根据你机器的重心高度来定
-    if(target_angle > 20.0f)  target_angle = 20.0f;  // 最大前倾 12 度
-    if(target_angle < -20.0f) target_angle = -20.0f; // 最大后仰 12 度
+    
+    // 限幅保护
+    if(target_angle > 12.0f)  target_angle = 12.0f;  
+    if(target_angle < -12.0f) target_angle = -12.0f; 
 
+    // 倾角过大时摔倒保护
     if((pitch >= 80) || (pitch <= -80)) Encoder_Integral = 0;    
 
     return target_angle; 
+}
+
+
+// 转向环：开环前馈(提供动力) + 陀螺仪阻尼(防止疯转)
+int16_t turn_ring(float Target_Turn_Speed, float Gyro_Z)
+{
+    int16_t turn_pwm;
+    // 这样当 Target_Turn_Speed 为 0 时，加上陀螺仪的反馈，就能产生抵抗扭转的阻尼力
+    turn_pwm = (turn_Kp * Target_Turn_Speed) + (turn_Kd * Gyro_Z); 
+    
+    return turn_pwm;
 }
 
 
@@ -140,8 +182,13 @@ void control_motor(void)
 
     // 3. 【转向环】计算转向补偿 (根据你最初代码的逻辑)
     // 这里简单处理：如果没有转向需求(turnment=0)，则用 gyroz 抑制自旋
-    if(turnment == 0) turn_out = turn_Kd * gyroz; 
-    else turn_out = turn_out = (turn_Kp * turnment) - (turn_Kd * gyroz);
+    //if(turnment == 0) turn_out = turn_Kd * gyroz; 
+    //else turn_out = (turn_Kp * turnment) - (turn_Kd * gyroz);
+
+
+    // 3. 【转向环】计算转向补偿
+    // 如果 turnment 为 0，期望角速度为0，误差就是 (0 - gyroz)，依然能起到抑制自旋的作用
+    turn_out = turn_ring(turnment, gyroz);
 	
 	// --- 【转向限速核心代码】 ---
     if(turn_out > turn_limit)  turn_out = turn_limit;

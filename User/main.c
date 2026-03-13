@@ -26,6 +26,16 @@
 #include "process_command.h"
 
 
+//注释掉用于调试的printf，已经拖累运行速度了，printf是阻塞式发送，一字节一字节的发送，以后避免使用
+// 1 = 开启打印，0 = 关闭打印
+#define ENABLE_DEBUG_PRINT 0 
+
+#if ENABLE_DEBUG_PRINT == 0
+    // 如果关闭打印，直接把本文件里的 printf 宏定义为空！
+    // 编译器在编译时会直接把下面的所有 printf 当作空气删掉，完全不占用CPU和执行时间。
+    #define printf(...) 
+#endif
+
 // 定义超时时间（毫秒），500ms 到 1000ms
 #define CMD_TIMEOUT_MS  150 
 
@@ -52,13 +62,13 @@ void messageTask(void *arg)
     
     // 定义变量来“记住”最后一次舵机的状态 ---
     // 必须定义在 while 循环外面，否则每次循环都会被清零
-    int Last_Servo_ID = 0;     // 默认ID 0
-    int Last_Servo_Angle = 0;  // 默认角度 0
+    //int Last_Servo_ID = 0;     // 默认ID 0
+    //int Last_Servo_Angle = 0;  // 默认角度 0
 	
 	
 	// 初始化
-//    Data_Locked = 0; 
-//    USART2_RxIndex = 0;
+    //Data_Locked = 0; 
+    //USART2_RxIndex = 0;
 	
 
 	//AT指令
@@ -91,7 +101,7 @@ void messageTask(void *arg)
     }
 	
 	
-	// 【新增】定义变量记录最后一次收到指令的时间
+	//定义变量记录最后一次收到指令的时间
     TickType_t Last_Cmd_Time = xTaskGetTickCount();
 	
     while(1) 
@@ -105,10 +115,10 @@ void messageTask(void *arg)
                 char *pColon = strchr(pIPD, ':');
                 if (pColon != NULL)
                 {
-                    // 【调用】统一处理函数
+                    // 统一处理函数
                     Process_Command(pColon + 1);
 					
-				   // 【新增】收到有效指令，更新时间戳
+				   //收到有效指令，更新时间戳
 				   Last_Cmd_Time = xTaskGetTickCount(); 
                 }
             }
