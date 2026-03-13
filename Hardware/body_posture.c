@@ -1,5 +1,5 @@
 #include "body_posture.h"         
-
+#include <math.h>
 
 // 定义滤波系数，建议范围 0.1 ~ 0.4
 // 0.1 表示 10% 原始信号 + 90% 上次信号（滤波强，延迟高）
@@ -7,7 +7,7 @@
 #define ROLL_FILTER_ALPHA 0.95f 
 
 
-// 【新增】死区阈值，默认 3.0 度
+// 死区阈值，默认 3.0 度
 float roll_dead_zone = 3.0f;
 float cog_dead_zone  = 3.0f;     // 【新增】重心环死区 (速度差小于此值，X轴不动)
 
@@ -28,13 +28,74 @@ float roll_Kd = 0.0f;  // 需要调试：阻尼，抑制震荡
 float target_roll_angle = 0.0f; // 默认为0度（水平平衡）
 
 
-// 5. 重心环参数 (X轴 - 前后平衡)
-float cog_Kp = 2.0f;   // 速度差越大，腿伸缩越多
-float cog_Kd = 0.0f;   // 抑制前后晃动
+// 5. 重心环参数 (X轴 - 前后平衡)   前馈机制
+//float cog_Kp = 2.0f;   // 速度差越大，腿伸缩越多
+//float cog_Kd = 0.0f;   // 抑制前后晃动
+
+
+
+// ==========================================================
+// 5. 重心环参数 (X轴 - 前后平衡) 【无延迟暴力响应版】
+// ==========================================================
+float cog_Kp_accel = 0.5f;  // 起步后蹬比例
+float cog_Kp_brake = 4.0f;  // 【调大！】刹车与手推时的前伸比例
+
+// 【极其重要：小车的物理极速！】
+// 请根据你的车轮实际空转能达到的最大速度来填。
+// 如果不填这个，腿永远不可能收回中间！
+float MAX_PHYSICAL_SPEED = 2.0f; 
 
 
 
 float roll_mechanical_zero = -2.85f;
+
+
+
+
+static float COG_PID_Core(float target_speed, float current_speed) {
+    // =====================================================
+    // 1. 【强制量力而行：解决腿永远收不回来的死结】
+    // 强行把上位机的 140 限制到电机能达到的 40。
+    // 这样 current_speed 才能追上 target_speed，误差才能归零，腿才能回正！
+    // =====================================================
+    if (target_speed > MAX_PHYSICAL_SPEED) target_speed = MAX_PHYSICAL_SPEED;
+    if (target_speed < -MAX_PHYSICAL_SPEED) target_speed = -MAX_PHYSICAL_SPEED;
+
+    // 2. 纯净死区 (删掉所有低通滤波，恢复零延迟)
+    // 你说噪声在 0.5~0.8，那我们就把死区卡在 1.2。
+    if (target_speed == 0 && fabs(current_speed) <= 1.2f) {
+        return 0.0f; // 彻底停稳，腿立马回正，绝不拖泥带水！
+    }
+
+    // 3. 纯粹的误差方向计算
+    float error = target_speed - current_speed;
+    float output = 0.0f;
+
+    // 4. 完美分流
+    if (target_speed == 0) 
+    {
+        // 手推 或 刹车：
+        // 假设你手推速度为 5，5 * 4.0 = 20mm！腿会瞬间顶满！
+        output = error * cog_Kp_brake; 
+    } 
+    else 
+    {
+        // 行驶起步：
+        output = error * cog_Kp_accel; 
+    }
+
+    // =====================================================
+    // 5. 救命的物理限幅 (保护机械结构不死锁)
+    // 必须保留！否则算出来偏移量太大，IK解算无解，舵机会死机不动！
+    // =====================================================
+    if (output > 20.0f) output = 20.0f;
+    if (output < -20.0f) output = -20.0f;
+
+    return output;
+}
+
+
+
 
 /**
  * @brief  设置目标高度 (由 main.c 解析完指令后调用)
@@ -95,21 +156,19 @@ void Set_Target_Roll_Angle(float angle)
 //这样在车子启动的时候和紧急刹车的时候，差值最大，然后腿部就会改变姿势从而改变重心。
 // 2. 重心 COG PID (控制前后 X 位置)
 // 2. 重心 COG PID (X轴) - 【新增死区逻辑】
-static float COG_PID_Core(float target_speed, float current_speed) {
-    float error = target_speed - current_speed;
+// static float COG_PID_Core(float target_speed, float current_speed) {
+//     float error = target_speed - current_speed;
     
-    // 【新增】重心死区逻辑
-    // 如果速度误差很小（比如只是路面颠簸引起的编码器波动），不要调整重心
-    // 只有当真正的急加速或急刹车（误差很大）时，才动腿
-    if (fabs(error) <= cog_dead_zone) return 0.0f;
+//     // 【新增】重心死区逻辑
+//     // 如果速度误差很小（比如只是路面颠簸引起的编码器波动），不要调整重心
+//     // 只有当真正的急加速或急刹车（误差很大）时，才动腿
+//     if (fabs(error) <= cog_dead_zone) return 0.0f;
 
-    static float last_error = 0;
-    float output = (cog_Kp * error) + (cog_Kd * (error - last_error));
-    last_error = error;
-    return output;
-}
-
-
+//     static float last_error = 0;
+//     float output = (cog_Kp * error) + (cog_Kd * (error - last_error));
+//     last_error = error;
+//     return output;
+// }
 
 
 

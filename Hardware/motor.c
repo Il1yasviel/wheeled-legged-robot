@@ -8,8 +8,8 @@ float upright_Kp=400.0f;  //原150，乘上1.5倍
 float upright_Kd=-1.8f;       //原0.25，也乘上1.5倍
 //速度环
 // 修改后的速度环参数（已转换）
-float cascade_speed_Kp =0.267f;//0.267f; 
-float cascade_speed_Ki =0.00133f;//0.00133f;
+float cascade_speed_Kp =0.3f;//0.267f; 
+float cascade_speed_Ki =0.001f;//0.00133f;
 //转向环
 float turn_Kp=-10.5f;   //极性负 期望小车转向，正反馈
 float turn_Kd=0.4f;    //极性正抑制小车转向，负反馈
@@ -110,12 +110,12 @@ float speed_ring(int16_t encoder_left, int16_t encoder_right)
     if ((Movement > 0 && current_speed < -2) || (Movement < 0 && current_speed > 2))
     {
         // 直接给出极大的步长，没有延迟，瞬间出腿抵消！
-        step = 50.0f; 
+        step = 80.0f; 
     }
     else
     {
-        // 顺着方向加速时，保持优雅，防止向后猛踹引发暴冲
-        step = 1.5f; 
+
+        step = 80.0f; 
     }
 
     // 执行斜坡运算
@@ -167,9 +167,9 @@ float speed_ring(int16_t encoder_left, int16_t encoder_right)
     // 计算出直立环的期望目标角度
     float target_angle = (cascade_speed_Kp * Encoder) + (cascade_speed_Ki * Encoder_Integral);
     
-    // 限幅保护保命
-    if(target_angle > 12.0f)  target_angle = 12.0f;  
-    if(target_angle < -12.0f) target_angle = -12.0f; 
+    // 限幅保护
+    if(target_angle > 5.0f)  target_angle = 5.0f;  
+    if(target_angle < -5.0f) target_angle = -5.0f; 
 
     if((pitch >= 80) || (pitch <= -80)) Encoder_Integral = 0;    
 
