@@ -43,7 +43,7 @@ float cog_Kp_brake = 4.0f;  // 【调大！】刹车与手推时的前伸比例
 // 【极其重要：小车的物理极速！】
 // 请根据你的车轮实际空转能达到的最大速度来填。
 // 如果不填这个，腿永远不可能收回中间！
-float MAX_PHYSICAL_SPEED = 2.0f; 
+float MAX_PHYSICAL_SPEED = 20.0f; 
 
 
 

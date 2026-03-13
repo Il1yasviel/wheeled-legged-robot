@@ -16,6 +16,7 @@ uint8_t ESP8266_SendCmd(char *cmd, char *res, uint32_t timeout_ms);
 uint8_t ESP8266_ConnectWiFi(void);
 void ESP8266_StartTCPServer(void);
 void ESP8266_StartUDP(void);
+void ESP8266_SendData(char *data);
 
 #endif
 

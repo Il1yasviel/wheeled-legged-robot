@@ -110,9 +110,6 @@ void ESP8266_StartTCPServer(void)
 }
 
 
-/**
- * @brief 开启 UDP 监听模式
- */
 void ESP8266_StartUDP(void)
 {
     printf(">> [ESP] Config UDP Mode...\r\n");
@@ -120,9 +117,8 @@ void ESP8266_StartUDP(void)
     // 刚连上 WiFi，稍微缓一下
     vTaskDelay(pdMS_TO_TICKS(1000)); 
 
-    // 1. 获取并打印 IP 地址 (这部分和之前一模一样，为了看本机的 IP)
     printf(">> [ESP] Requesting IP Info...\r\n");
-    ESP8266_ClearBuffer();             
+    ESP8266_ClearBuffer();            
     USART2_SendString("AT+CIFSR\r\n"); 
     
     vTaskDelay(pdMS_TO_TICKS(1000)); 
@@ -133,33 +129,26 @@ void ESP8266_StartUDP(void)
         printf(">> ESP8266 RESPONSE: \r\n%s\r\n", USART2_RxBuffer);
         printf("==========================================\r\n");
     }
-    else
-    {
-        printf(">> [ESP] Warning: No response!\r\n");
-    }
 
-    // ========================================================
-    // 2. 【核心修改区】把开启 TCP Server 的指令，换成开启 UDP 的指令
-    // ========================================================
-    
     // 第一步：依然需要开启多连接模式
     if(ESP8266_SendCmd("AT+CIPMUX=1", "OK", 1000) != 0)
     {
         printf(">> [ESP] Error: CIPMUX Failed\r\n");
     }
     
-    // 第二步：建立 UDP 传输通道 (重点是这句！)
-    // 参数解释：
-    // 0: 通道号 (多连接模式下的编号)
-    // "UDP": 协议类型
-    // "0.0.0.0": 远端 IP (设为 0.0.0.0 表示我不挑人，谁给我发都行)
-    // 0: 远端端口 (不限制)
-    // 8080: 本地监听端口 (你的上位机/APP就要往这个端口发数据)
-    // 2: 模式 (对端可变，方便小车给不同的手机原路回传数据)
-    // 把远端端口从 0 改成 8080 (或者任意非0数字)
-    if(ESP8266_SendCmd("AT+CIPSTART=0,\"UDP\",\"0.0.0.0\",8080,8080,2", "OK", 1000) == 0)
+    // ========================================================
+    // 【防死锁绝招】：断开之前残留的 0 号通道
+    // 防止你按单片机复位键时，ESP8266 没复位导致通道被占用的报错
+    // ========================================================
+    ESP8266_SendCmd("AT+CIPCLOSE=0", "OK", 500);
+
+    // ========================================================
+    // 【绝对核心】：把 "0.0.0.0" 换成你电脑真实的 IP "192.168.10.100" ！！！
+    // 参数含义：通道0, UDP协议, 目标IP(电脑), 目标端口8080, 本机发送端口8080, 固定模式0
+    // ========================================================
+    if(ESP8266_SendCmd("AT+CIPSTART=0,\"UDP\",\"192.168.10.100\",8080,8080,0", "OK", 1000) == 0)
     {
-        printf(">> [ESP] UDP Started! Listening on Port: 8080\r\n");
+        printf(">> [ESP] UDP Started! Fixed to 192.168.10.100:8080\r\n");
     }
     else
     {
@@ -167,3 +156,18 @@ void ESP8266_StartUDP(void)
     }
 }
 
+
+void ESP8266_SendData(char *data) 
+{
+    char cmd[32]; 
+    
+    // 【修改点】：绝对不能加 IP 和 8080！只写通道 0 和长度！
+    sprintf(cmd, "AT+CIPSEND=0,%d\r\n", strlen(data));
+    
+    USART2_SendString(cmd);
+    
+    // 给足 50ms 等待 ESP8266 吐出 '>' 符号
+    vTaskDelay(pdMS_TO_TICKS(50)); 
+    
+    USART2_SendString(data);
+}

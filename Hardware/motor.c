@@ -110,12 +110,12 @@ float speed_ring(int16_t encoder_left, int16_t encoder_right)
     if ((Movement > 0 && current_speed < -2) || (Movement < 0 && current_speed > 2))
     {
         // 直接给出极大的步长，没有延迟，瞬间出腿抵消！
-        step = 80.0f; 
+        step = 500.0f; 
     }
     else
     {
 
-        step = 80.0f; 
+        step = 500.0f; 
     }
 
     // 执行斜坡运算

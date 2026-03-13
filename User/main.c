@@ -47,6 +47,13 @@ TaskHandle_t balanceTaskHandler;
 //用于接收坐标的全局变量，放到body_posture.h里
 //float cmd_xL, cmd_yL, cmd_xR, cmd_yR;
 
+// ==========================================
+// 【新增】用于任务间通信的全局变量
+// ==========================================
+char tx_report_buf[64];
+uint8_t tx_report_flag = 0;
+uint8_t python_connected = 0; // 【新增这把锁】记录上位机是否已连上
+
 /**
  * @brief 串口指令解析与数据打印任务
  * @param arg FreeRTOS任务参数
@@ -120,6 +127,11 @@ void messageTask(void *arg)
 					
 				   //收到有效指令，更新时间戳
 				   Last_Cmd_Time = xTaskGetTickCount(); 
+
+                    // ===============================================
+                    // 【核心修复 1】：成功收到上位机的心跳，激活发送权限！
+                    // ===============================================
+                    python_connected = 1; 
                 }
             }
             USART2_RxIndex = 0; 
@@ -127,6 +139,19 @@ void messageTask(void *arg)
             memset(USART2_RxBuffer, 0, sizeof(USART2_RxBuffer));
 			
 						
+        }
+
+        // ===========================================================
+        // 【执行发送】：检查平衡任务是否有数据要回传给电脑
+        // ===========================================================
+        if (tx_report_flag == 1)
+        {
+            // 因为你在 StartUDP 里用了 AT+CIPMUX=1 且连接在通道 0
+            // 所以调用发送函数把 tx_report_buf 发出去
+            ESP8266_SendData(tx_report_buf); 
+            
+            // 发完记得把标志位清零，否则会疯狂重复发送
+            tx_report_flag = 0; 
         }
 
 
@@ -190,7 +215,10 @@ void messageTask(void *arg)
         printf("P:%.2f | R:%.2f | M:%d | SID:%d | Ang:%d\r\n", 
                 pitch, (float)roll, (int)Movement, Last_Servo_ID, Last_Servo_Angle);
 
-        vTaskDelay(40); 
+
+        // --- 3. 延时 ---
+        vTaskDelay(40);
+
 //		if (USART2_RxFlag == 1)
 //		{
 //			// 如果收到 ESP32 发来的任何透传数据，直接打印到串口3看
@@ -565,6 +593,10 @@ void balanceTask(void *arg)
     cmd_xL = 22.0f; cmd_yL = 110.0f;
     cmd_xR = 22.0f; cmd_yR = 110.0f;
 
+
+    static uint8_t report_tick = 0; 
+
+
     while(1)
     {
         // 1. 严格控制周期
@@ -594,6 +626,19 @@ void balanceTask(void *arg)
             Servo_Move(4, Robot_IK.Angle_Servo_Right_Rear, 50); 
         }
 		//**********************************
+
+        // =====================================================
+        // 【核心修复 2】：只有在 python_connected == 1 时才允许回传！
+        // 否则 ESP8266 会因为不知道目标 IP 而报错卡死
+        // =====================================================
+        report_tick++;
+        if (report_tick >= 10 && python_connected == 1) 
+        {
+            sprintf(tx_report_buf, "CAR_SPD:%.1f\r\n", current_avg_speed);
+            tx_report_flag = 1; 
+            report_tick = 0;
+        }
+  
     }
 }
 
