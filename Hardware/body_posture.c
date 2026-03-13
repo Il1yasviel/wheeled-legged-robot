@@ -35,67 +35,55 @@ float target_roll_angle = 0.0f; // 默认为0度（水平平衡）
 
 
 // ==========================================================
-// 5. 重心环参数 (X轴 - 前后平衡) 【无延迟暴力响应版】
+// 5. 重心环参数 (X轴) 【死区过滤底噪 + 纯正闭环版】
 // ==========================================================
-float cog_Kp_accel = 0.5f;  // 起步后蹬比例
-float cog_Kp_brake = 4.0f;  // 【调大！】刹车与手推时的前伸比例
+// 闭环反馈系数 
+float cog_Kp = 1.4f;  
 
-// 【极其重要：小车的物理极速！】
-// 请根据你的车轮实际空转能达到的最大速度来填。
-// 如果不填这个，腿永远不可能收回中间！
-float MAX_PHYSICAL_SPEED = 20.0f; 
-
+// 【核心死区】：根据你的日志，1个脉冲跳变大概是 100~200 PPS。
+// 只要速度在这个范围内跳，视为编码器底噪，腿绝对不乱动！
+float cog_stop_deadzone = 40.0f; 
 
 
+
+//翻滚机械零点
 float roll_mechanical_zero = -2.85f;
 
 
 
-
-static float COG_PID_Core(float target_speed, float current_speed) {
-    // =====================================================
-    // 1. 【强制量力而行：解决腿永远收不回来的死结】
-    // 强行把上位机的 140 限制到电机能达到的 40。
-    // 这样 current_speed 才能追上 target_speed，误差才能归零，腿才能回正！
-    // =====================================================
-    if (target_speed > MAX_PHYSICAL_SPEED) target_speed = MAX_PHYSICAL_SPEED;
-    if (target_speed < -MAX_PHYSICAL_SPEED) target_speed = -MAX_PHYSICAL_SPEED;
-
-    // 2. 纯净死区 (删掉所有低通滤波，恢复零延迟)
-    // 你说噪声在 0.5~0.8，那我们就把死区卡在 1.2。
-    if (target_speed == 0 && fabs(current_speed) <= 1.2f) {
-        return 0.0f; // 彻底停稳，腿立马回正，绝不拖泥带水！
+static float COG_PID_Core(float target_speed, float current_speed) 
+{
+    // ====================================================
+    // 1. 核心死区拦截：专治原地抽搐！
+    // ====================================================
+    // 如果目标是 0（想站住），且当前速度全是底噪毛刺，强行当做 0 处理！
+    if (target_speed == 0.0f && fabs(current_speed) <= cog_stop_deadzone) 
+    {
+        current_speed = 0.0f; 
     }
 
-    // 3. 纯粹的误差方向计算
+    // ====================================================
+    // 2. 最纯粹的闭环计算
+    // ====================================================
     float error = target_speed - current_speed;
-    float output = 0.0f;
+    float output = error * cog_Kp;
 
-    // 4. 完美分流
-    if (target_speed == 0) 
-    {
-        // 手推 或 刹车：
-        // 假设你手推速度为 5，5 * 4.0 = 20mm！腿会瞬间顶满！
-        output = error * cog_Kp_brake; 
-    } 
-    else 
-    {
-        // 行驶起步：
-        output = error * cog_Kp_accel; 
-    }
+    // 【闭环物理推演 - 完全符合你的要求】：
+    // 1. 发送 80：误差 80，output = 4mm -> 腿向后蹬，前倾加速！
+    // 2. 速度超过 80 (例如跑到 200)：误差 = 80 - 200 = -120，output = -6mm -> 腿越过中心向前伸，主动降速！
+    // 3. 速度降回 60：误差 = 80 - 60 = 20，output = 1mm -> 腿又微微往后收，继续保持。
 
-    // =====================================================
-    // 5. 救命的物理限幅 (保护机械结构不死锁)
-    // 必须保留！否则算出来偏移量太大，IK解算无解，舵机会死机不动！
-    // =====================================================
-    if (output > 20.0f) output = 20.0f;
-    if (output < -20.0f) output = -20.0f;
+    // 3. 极限保护：防止 IK 逆解报错
+    if (output > 22.0f) output = 22.0f;
+    if (output < -22.0f) output = -22.0f;
+
+    // 4. 加一层极轻微的保护，防止机械结构磨损，不影响响应速度
+    static float last_output = 0.0f;
+    output = (output * 0.5f) + (last_output * 0.5f);
+    last_output = output;
 
     return output;
 }
-
-
-
 
 /**
  * @brief  设置目标高度 (由 main.c 解析完指令后调用)
@@ -174,48 +162,47 @@ void Set_Target_Roll_Angle(float angle)
 
 
 /**
- * @brief  姿态平衡核心任务
+ * @brief  姿态平衡核心任务 - 独立控制版
  * @param  current_roll   当前翻滚角
  * @param  gyro_roll_rate 当前角速度
- * @param  out_yL         [输出] 计算并限幅后的左腿高度
- * @param  out_yR         [输出] 计算并限幅后的右腿高度
+ * @param  out_xL/R       [输出] 最终左/右腿X坐标
+ * @param  out_yL/R       [输出] 最终左/右腿Y坐标
  */
-//还有两条腿在X轴方向的偏移量
-//传进来参数：当前速度和目标速度  用于重心环的计算，也就是腿在x轴的PID
 void Body_Balance_Compute(float current_roll, float gyro_roll_rate, 
-                          float target_speed, float current_speed,
-                          float *out_x, float *out_yL, float *out_yR)
+                          float *out_xL, float *out_yL, 
+                          float *out_xR, float *out_yR)
 {
-    // 1. 一阶滤波处理
-    static float last_filtered_roll = 0.0f; // 静态变量，保留上次计算结果
+    // --- 1. Y轴平衡修正 (高度控制) ---
+    static float last_filtered_roll = 0.0f; 
     float filtered_roll = ROLL_FILTER_ALPHA * current_roll + (1.0f - ROLL_FILTER_ALPHA) * last_filtered_roll;
-    last_filtered_roll = filtered_roll; // 更新历史记录
+    last_filtered_roll = filtered_roll; 
 
-    // 2. 使用滤波后的值进行 Y 轴平衡计算
-    // 注意：这里传入的是 filtered_roll 而不是原始的 current_roll
+    // 计算平衡补偿量
     float height_offset = Roll_PID_Core(filtered_roll, gyro_roll_rate);
 
+    // 最终高度 = 上位机基准高度 + 平衡补偿
     float temp_yL = cmd_yL - height_offset; 
     float temp_yR = cmd_yR + height_offset; 
 
-    // 限幅 Y
+    // Y轴限幅
     if (temp_yL > LEG_MAX_HEIGHT) temp_yL = LEG_MAX_HEIGHT; if (temp_yL < LEG_MIN_HEIGHT) temp_yL = LEG_MIN_HEIGHT;
     if (temp_yR > LEG_MAX_HEIGHT) temp_yR = LEG_MAX_HEIGHT; if (temp_yR < LEG_MIN_HEIGHT) temp_yR = LEG_MIN_HEIGHT;
-    
-    // B. 计算重心调整 (X轴)
-    float x_offset = COG_PID_Core(target_speed, current_speed);
-    
-    // 逻辑：急刹车(Error负) -> x_offset负 -> 22 - (负) = 变大 -> 腿前伸
-    float temp_x = LEG_X_CENTER - x_offset; 
-    
-    // 限幅 X
-    if (temp_x > LEG_X_MAX) temp_x = LEG_X_MAX;
-    if (temp_x < LEG_X_MIN) temp_x = LEG_X_MIN;
 
-    // C. 输出
+    // --- 2. X轴坐标处理 (独立控制) ---
+    // 不再计算 PID，直接使用上位机传入的 cmd_xL 和 cmd_xR
+    float temp_xL = cmd_xL;
+    float temp_xR = cmd_xR;
+
+    // X轴限幅
+    if (temp_xL > LEG_X_MAX) temp_xL = LEG_X_MAX; if (temp_xL < LEG_X_MIN) temp_xL = LEG_X_MIN;
+    if (temp_xR > LEG_X_MAX) temp_xR = LEG_X_MAX; if (temp_xR < LEG_X_MIN) temp_xR = LEG_X_MIN;
+
+    // --- 3. 输出赋值 ---
     *out_yL = temp_yL;
     *out_yR = temp_yR;
-    *out_x  = temp_x; 
+    *out_xL = temp_xL; 
+    *out_xR = temp_xR;
 }
+
 
 

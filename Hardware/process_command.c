@@ -51,23 +51,20 @@ void Process_Command(char *cmd_str)
     {		
 		// ===========================================================
         // 【新增】全能控制指令 (解决TCP分包导致的指令不同步问题)
-        // 格式: #<速度>,<转向>,<机械零点>,<高度>,<翻滚角>
+        // 格式: #<速度>,<转向>,<机械零点>,<高度>,<翻滚角>,<X坐标偏移>
         // 示例: #100,-30,0.5,160,2.0
         // ===========================================================
         case '#':
         {
             int spd_in, turn_in;
             float mech_z_in, height_in, roll_in;
+            int x_offset_in; // 【新增】用于接收 Python 发来的 yh_int
 
             // 使用 sscanf 解析5个参数
             // %d: 整数, %f: 浮点数
-            if (sscanf(&cmd_str[1], "%d,%d,%f,%f,%f", 
-                       &spd_in,     // 速度
-                       &turn_in,    // 转向
-                       &mech_z_in,  // 机械零点
-                       &height_in,  // 高度
-                       &roll_in     // 翻滚角
-                       ) == 5)
+            // 注意引号里的内容，现在有 6 个占位符了
+            if (sscanf(&cmd_str[1], "%d,%d,%f,%f,%f,%d", 
+                &spd_in, &turn_in, &mech_z_in, &height_in, &roll_in, &x_offset_in) == 6)
             {
                 // 1. 更新运动参数
                 Movement = (int16_t)spd_in;
@@ -88,6 +85,23 @@ void Process_Command(char *cmd_str)
                 // 调试打印 (可选，高频发送时建议注释掉以节省CPU)
                 // printf(">> [ALL] V:%d T:%d Z:%.2f H:%.1f R:%.1f\r\n", 
                 //        Movement, turnment, mechanical_zero, cmd_yL, roll_in);
+                            // 4. 【核心新增】更新 X 轴横坐标 (前后重心)
+                // 逻辑说明：
+                // Python 发来的 x_offset_in 范围通常是 -120 到 +120（基于 max_move）。
+                // 机器人的 LEG_X 范围是 0(后) 到 44(前)，中位是 22。
+                // 我们需要把 Python 的偏移量映射到机器人的坐标上。
+                
+                // 逻辑：Python 现在传的是 -100 ~ 100
+                // 映射公式：x_mapped = x_offset_in * (机器人最大偏移量 22 / Python最大值 100)
+                float x_mapped = (float)x_offset_in * (22.0f / 100.0f); 
+                
+                // 最终坐标 = 中位(22) + 映射后的偏移
+                cmd_xL = 22.0f + x_mapped;
+                cmd_xR = 22.0f + x_mapped;
+
+                // 边界检查（防抖/防越界已经在 Body_Balance_Compute 里做了，这里也可以加）
+                if(cmd_xL > 44.0f) cmd_xL = 44.0f; if(cmd_xL < 0.0f) cmd_xL = 0.0f;
+                if(cmd_xR > 44.0f) cmd_xR = 44.0f; if(cmd_xR < 0.0f) cmd_xR = 0.0f;
             }
             else
             {

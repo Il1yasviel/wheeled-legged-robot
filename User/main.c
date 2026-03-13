@@ -576,13 +576,9 @@ void balanceTask(void *arg)
     const TickType_t xFrequency = 40; 
     
     // 接收计算结果的变量，是驱动舵机的最终坐标*****
-    float final_yL, final_yR;
-    float final_x; 
+    float final_xL, final_yL, final_xR, final_yR; 
 	
-	
-	// 平均速度
-    float current_avg_speed = 0.0f;
-    
+
     // 初始化时间
     xLastWakeTime = xTaskGetTickCount();
     
@@ -595,28 +591,32 @@ void balanceTask(void *arg)
 
 
     static uint8_t report_tick = 0; 
-
+    float current_pps = 0.0f; // 当前每秒脉冲数
 
     while(1)
     {
         // 1. 严格控制周期
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
         
-        // 1. 获取当前平均速度 (读取 data_read.h 里的全局变量)
-        current_avg_speed = (float)(speedLeft + speedRight) / 2.0f;
+        // 1. 获取 5ms 原始脉冲均值，乘以 200 换算成“每秒脉冲数”
+        float raw_speed = (float)(speedLeft + speedRight) / 2.0f;
+        current_pps = raw_speed * 200.0f; 
 
-        // 2. 核心计算
-        // 传入：姿态、目标速度(Movement)、当前速度(current_avg_speed)
-        // 传出：final_x (前后重心), final_yL/R (左右高度)
-        Body_Balance_Compute(roll, gyrox, (float)Movement, current_avg_speed, 
-                             &final_x, &final_yL, &final_yR);
+        // 2. 上位机数据对齐：让上位机的 Movement 直接代表“目标 PPS”
+        float target_pps = (float)Movement; 
+
+
+        // 调用计算
+        // 此时 target_speed 和 current_speed 传参已无意义，可以直接传0或删掉参数
+        Body_Balance_Compute(roll, gyrox, &final_xL, &final_yL, &final_xR, &final_yR);
 
 		
 		
 		//最终输出=上位机指令（基准）+PID计算结果（修正）  并不会覆盖基准指令，自动控制仅仅只在基准指令的基础上，添加修正量。
 		//逆运动学解算
 		//***********************************   核心部分，根据坐标来驱动舵机，这是自动化执行   
-        uint8_t is_safe = IK_Compute(final_x, final_yL, final_x, final_yR);
+        // 2. 【核心修复】：把里面的 final_x 替换成 final_xL 和 final_xR
+        uint8_t is_safe = IK_Compute(final_xL, final_yL, final_xR, final_yR);
         // 驱动舵机 (如果解算成功)
         if (is_safe)
         {
@@ -628,13 +628,13 @@ void balanceTask(void *arg)
 		//**********************************
 
         // =====================================================
-        // 【核心修复 2】：只有在 python_connected == 1 时才允许回传！
+        // 只有在 python_connected == 1 时才允许回传！
         // 否则 ESP8266 会因为不知道目标 IP 而报错卡死
         // =====================================================
         report_tick++;
         if (report_tick >= 10 && python_connected == 1) 
         {
-            sprintf(tx_report_buf, "CAR_SPD:%.1f\r\n", current_avg_speed);
+            sprintf(tx_report_buf, "SPD:%.0f PPS\r\n", current_pps);//给上位机发送的调试信息
             tx_report_flag = 1; 
             report_tick = 0;
         }

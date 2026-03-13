@@ -20,11 +20,11 @@
 #define H_MAX  137.0f   // 最高高度
 
 // PID 映射范围 (全部乘以 1.5)
-#define KP_AT_MIN  400.0f    // 原 150.0 -> 225.0
-#define KP_AT_MAX  400.0f    // 原 230.0 -> 345.0 (或者保守点 320)
+#define KP_AT_MIN  1400.0f    // 原 150.0 -> 225.0
+#define KP_AT_MAX  1400.0f    // 原 230.0 -> 345.0 (或者保守点 320)
 
-#define KD_AT_MIN  -1.8f   // 原 -0.25 -> -0.375
-#define KD_AT_MAX  -1.8f   // 原 -0.35 -> -0.525
+#define KD_AT_MIN  -3.5f   // 原 -0.25 -> -0.375
+#define KD_AT_MAX  -3.5f   // 原 -0.35 -> -0.525
 
 
 
@@ -48,10 +48,10 @@ void Motor_Set_Target_Height(float yL, float yR);
 // body_posture.h
 void Set_Target_Roll_Angle(float angle);
 
-//输入传感器数据，通过指针“带回”计算好的最终高度
+// 修改后的函数声明
 void Body_Balance_Compute(float current_roll, float gyro_roll_rate, 
-                          float target_speed, float current_speed, 
-                          float *out_x, float *out_yL, float *out_yR);
+                          float *out_xL, float *out_yL, 
+                          float *out_xR, float *out_yR);
 
 
 #endif

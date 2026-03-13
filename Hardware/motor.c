@@ -4,15 +4,15 @@
 //机械零点
 float mechanical_zero=-5.3f;//0.3
 //直立环
-float upright_Kp=400.0f;  //原150，乘上1.5倍
-float upright_Kd=-1.8f;       //原0.25，也乘上1.5倍
+float upright_Kp=1400.0f;  //原150，乘上1.5倍
+float upright_Kd=-3.5f;       //原0.25，也乘上1.5倍
 //速度环
 // 修改后的速度环参数（已转换）
-float cascade_speed_Kp =0.3f;//0.267f; 
-float cascade_speed_Ki =0.001f;//0.00133f;
+float cascade_speed_Kp =-0.2f;//0.267f; 
+float cascade_speed_Ki =-0.001f;//0.00133f;
 //转向环
-float turn_Kp=-10.5f;   //极性负 期望小车转向，正反馈
-float turn_Kd=0.4f;    //极性正抑制小车转向，负反馈
+float turn_Kp=-50.0f;   //极性负 期望小车转向，正反馈
+float turn_Kd=0.3f;    //极性正抑制小车转向，负反馈
 
 float turn_limit = 1000.0f; // 建议值在 300 到 800 之间，根据电机动力调整
 
@@ -90,88 +90,48 @@ int16_t upright_ring(float Angle,float Gyro, float Target_Angle)
 }
 
 
-//发现一个问题，就是停止的时候总是会滑翔，发现是腿部助跑后，归位的太慢了，然后就在停止的时候让轮子加速跑，从而加快腿部归到原位，从而减少滑翔的影响
-//例如向前加速的时候，腿部向后蹬，重心在前面，然后突然停止的时候，腿部会向前回归到原位，速度要是慢的话，就会一直滑翔。这时候轮子和腿一直向前冲，
-//让重心快速落到机器人的中心，达到快速停止的效果。
-// 速度环：直接输出目标角度
+// 速度环：极简、零延迟、瞬间刹车版
 float speed_ring(int16_t encoder_left, int16_t encoder_right)
 {  
-    static float Encoder_Integral, Encoder;
-    static float current_movement = 0.0f; 
+    static float Encoder_Integral = 0;
+    static float Encoder_Filter = 0;
     
+    // 1. 获取真实速度，轻微滤波（不要加巨大的延迟！）
     float current_speed = (encoder_left + encoder_right);
-    float speed_err;
+    Encoder_Filter = Encoder_Filter * 0.8f + current_speed * 0.2f;
 
-    float step; 
-    
-    // 判断指令是否在“对抗”当前的车身运动（主动反方向打摇杆救车）
-    // 如果你在往前滑 (current_speed > 2)，但摇杆往后打 (Movement < 0)
-    // 或者你在往后溜 (current_speed < -2)，但摇杆往前打 (Movement > 0)
-    if ((Movement > 0 && current_speed < -2) || (Movement < 0 && current_speed > 2))
+    // 2. 没有任何多余的“斜坡陷阱”，摇杆(Movement)给多少，直接算误差！
+    float speed_err =Movement- Encoder_Filter; 
+
+    // 3. 【灵魂逻辑：瞬间刹车与抗饱死】
+    if (Movement == 0) 
     {
-        // 直接给出极大的步长，没有延迟，瞬间出腿抵消！
-        step = 500.0f; 
+        // ★ 当你松开摇杆的瞬间，立刻清空所有历史积分！
+        // 这样小车大脑里就不会有“刚才欠了速度还没还”的记忆，
+        // 它会立刻把目标角度归零，依靠自身的重量向后仰，瞬间停下！
+        Encoder_Integral = 0; 
     }
     else
     {
-
-        step = 500.0f; 
+        // 只有在按住摇杆时，才允许误差累加
+        Encoder_Integral += speed_err;   
+        
+        // 严格限制积分大小，就算推满摇杆也绝不允许它累加到失控
+        // （你可以根据情况把 1500 调小，比如 1000）
+        if(Encoder_Integral > 1500.0f) Encoder_Integral = 1500.0f;
+        if(Encoder_Integral < -1500.0f) Encoder_Integral = -1500.0f; 
     }
 
-    // 执行斜坡运算
-    if (current_movement < Movement) current_movement += step;
-    else if (current_movement > Movement) current_movement -= step;
+    // 4. 计算出直立环的期望目标角度
+    float target_angle = (cascade_speed_Kp * speed_err) + (cascade_speed_Ki * Encoder_Integral);
     
-    // 消除逼近误差
-    if (fabs((int)(Movement - current_movement)) <= step) 
-    {
-        current_movement = Movement;
-    }
+    // 5. 【物理极限锁死】
+    // 平衡车前倾超过 6 度，普通电机满载也拉不回来，绝对不能让它倾斜过头！
+    if(target_angle > 4.0f)  target_angle = 4.0f;  
+    if(target_angle < -4.0f) target_angle = -4.0f; 
 
-    // 1. 常规行驶时的速度偏差
-    speed_err = current_speed - current_movement; 
-    
-    // 只有当遥控器归零，且平滑速度也完全降到 0 时，才启动暴力手刹
-    if (Movement == 0 && current_movement == 0)
-    {
-        if (current_speed > 10 || current_speed < -10)
-        {
-            speed_err = current_speed * 45.0f; 
-        }
-        else if (current_speed > 5 || current_speed < -5)
-        {
-            speed_err = current_speed * 10.0f; 
-        }
-        else
-        {
-            if (current_speed >= -5 && current_speed <= 5)
-            {
-                speed_err = 0; 
-                Encoder_Integral *= 0.9f; 
-            }
-        }
-    }
-
-
-    // 一阶低通滤波器
-    Encoder *= 0.7f;                
-    Encoder += speed_err * 0.3f;    
-
-    // 积分累加
-    Encoder_Integral += Encoder;   
-    
-    // 积分限幅 (紧紧勒住，防止憋大招暴走)
-    if(Encoder_Integral > 500) Encoder_Integral = 500;
-    if(Encoder_Integral < -500) Encoder_Integral = -500; 
-
-    // 计算出直立环的期望目标角度
-    float target_angle = (cascade_speed_Kp * Encoder) + (cascade_speed_Ki * Encoder_Integral);
-    
-    // 限幅保护
-    if(target_angle > 5.0f)  target_angle = 5.0f;  
-    if(target_angle < -5.0f) target_angle = -5.0f; 
-
-    if((pitch >= 80) || (pitch <= -80)) Encoder_Integral = 0;    
+    // 6. 倒地保护（摔倒后不再累加乱七八糟的误差）
+    if((pitch >= 40) || (pitch <= -40)) Encoder_Integral = 0;    
 
     return target_angle; 
 }
@@ -227,8 +187,8 @@ void control_motor(void)
 	
 
     // 5. 【死区补偿】
-    if(pwm1 >= 0) pwm1 += 150; else pwm1 -= 150;    //电池从3S换成了2S，死区从140修改成250
-    if(pwm2 >= 0) pwm2 += 150; else pwm2 -= 150;
+    if(pwm1 >= 0) pwm1 += 120; else pwm1 -= 120;    //电池从3S换成了2S，死区从140修改成250
+    if(pwm2 >= 0) pwm2 += 120; else pwm2 -= 120;
 
 
 	pwm1=limit_pwm(pwm1); //双重限制，解决了PWM超限导致突然摔倒的错误
