@@ -8,13 +8,13 @@ float upright_Kp=1400.0f;  //原150，乘上1.5倍
 float upright_Kd=-3.5f;       //原0.25，也乘上1.5倍
 //速度环
 // 修改后的速度环参数（已转换）
-float cascade_speed_Kp =-0.2f;//0.267f; 
-float cascade_speed_Ki =-0.001f;//0.00133f;
+float cascade_speed_Kp = -0.02f;
+float cascade_speed_Ki =-0.04f;
 //转向环
 float turn_Kp=-50.0f;   //极性负 期望小车转向，正反馈
 float turn_Kd=0.3f;    //极性正抑制小车转向，负反馈
 
-float turn_limit = 1000.0f; // 建议值在 300 到 800 之间，根据电机动力调整
+float turn_limit = 2000.0f; // 建议值在 300 到 800 之间，根据电机动力调整
 
 
 //暴露PWM1和PWM2给外部，实时查看PWM的值，检查车身突然无力摔倒的原因
@@ -90,51 +90,79 @@ int16_t upright_ring(float Angle,float Gyro, float Target_Angle)
 }
 
 
-// 速度环：极简、零延迟、瞬间刹车版
+
+// 速度环（外环）- 极简纯P控制 + 10分频版 (50ms周期)
 float speed_ring(int16_t encoder_left, int16_t encoder_right)
 {  
-    static float Encoder_Integral = 0;
-    static float Encoder_Filter = 0;
+    static uint8_t speed_count = 0;
+    static float encoder_sum_left = 0.0f;
+    static float encoder_sum_right = 0.0f;
+    static float last_target_angle = 0.0f;
+    static float speed_filter = 0.0f;
+    static float speed_integral = 0.0f;
+    static float last_movement = 0.0f;            // 【新增】记录上一次的指令
+
+    float current_speed;
+    float speed_error;
+
+    // 1. 5ms 脉冲采集
+    encoder_sum_left += encoder_left;
+    encoder_sum_right += encoder_right;
+    speed_count++;
     
-    // 1. 获取真实速度，轻微滤波（不要加巨大的延迟！）
-    float current_speed = (encoder_left + encoder_right);
-    Encoder_Filter = Encoder_Filter * 0.8f + current_speed * 0.2f;
-
-    // 2. 没有任何多余的“斜坡陷阱”，摇杆(Movement)给多少，直接算误差！
-    float speed_err =Movement- Encoder_Filter; 
-
-    // 3. 【灵魂逻辑：瞬间刹车与抗饱死】
-    if (Movement == 0) 
+    // 2. 每 10ms (speed_count >= 2) 计算一次速度环
+    if (speed_count >= 2)
     {
-        // ★ 当你松开摇杆的瞬间，立刻清空所有历史积分！
-        // 这样小车大脑里就不会有“刚才欠了速度还没还”的记忆，
-        // 它会立刻把目标角度归零，依靠自身的重量向后仰，瞬间停下！
-        Encoder_Integral = 0; 
+        // 【核心修正】10ms 周期换算 PPS 必须乘以 100.0f (1秒/0.01秒 = 100)
+        current_speed = ((encoder_sum_left + encoder_sum_right) / 2.0f) * 100.0f; 
+
+        // 低通滤波 (保持平滑，不吱吱叫)
+        speed_filter = speed_filter * 0.7f + current_speed * 0.3f;
+
+        // 计数器清零
+        encoder_sum_left = 0.0f;
+        encoder_sum_right = 0.0f;
+        speed_count = 0;
+
+        // --- 【核心修改：指令方向切换检测】 ---
+        // 如果上次在前进(>0)这次在后退(<0)，或者相反，直接踹掉旧积分
+        if ((Movement > 0 && last_movement < 0) || (Movement < 0 && last_movement > 0))
+        {
+            speed_integral = 0.0f; 
+        }
+        last_movement = Movement; // 更新记录
+
+        // 3. 误差计算
+        speed_error = (float)Movement - speed_filter;
+
+        // 4. 积分逻辑
+        speed_integral += speed_error;
+
+        // 情况 A: 刹车模式 (指令为0)
+        if (Movement == 0) 
+        {
+            speed_integral *= 0.1f; // 快速衰减，交给 P 项去急刹
+        }
+
+        // 5. 积分限幅
+        if (speed_integral > 10000.0f)  speed_integral = 10000.0f;
+        if (speed_integral < -10000.0f) speed_integral = -10000.0f;
+
+        // 6. PI 计算
+        last_target_angle = (cascade_speed_Kp * speed_error) + (cascade_speed_Ki * speed_integral);
+
+        // 7. 输出限幅 (6度是一个比较保守的安全角度，急刹可能需要更大，你可以视情况调到 10-12)
+        if (last_target_angle > 8.0f) last_target_angle = 8.0f;
+        else if (last_target_angle < -8.0f) last_target_angle = -8.0f;
     }
-    else
-    {
-        // 只有在按住摇杆时，才允许误差累加
-        Encoder_Integral += speed_err;   
-        
-        // 严格限制积分大小，就算推满摇杆也绝不允许它累加到失控
-        // （你可以根据情况把 1500 调小，比如 1000）
-        if(Encoder_Integral > 1500.0f) Encoder_Integral = 1500.0f;
-        if(Encoder_Integral < -1500.0f) Encoder_Integral = -1500.0f; 
-    }
 
-    // 4. 计算出直立环的期望目标角度
-    float target_angle = (cascade_speed_Kp * speed_err) + (cascade_speed_Ki * Encoder_Integral);
-    
-    // 5. 【物理极限锁死】
-    // 平衡车前倾超过 6 度，普通电机满载也拉不回来，绝对不能让它倾斜过头！
-    if(target_angle > 4.0f)  target_angle = 4.0f;  
-    if(target_angle < -4.0f) target_angle = -4.0f; 
+    // 8. 跌倒保护
+    if (pitch > 40.0f || pitch < -40.0f) speed_integral = 0.0f;
 
-    // 6. 倒地保护（摔倒后不再累加乱七八糟的误差）
-    if((pitch >= 40) || (pitch <= -40)) Encoder_Integral = 0;    
-
-    return target_angle; 
+    return last_target_angle;
 }
+
+
 
 
 // 转向环：开环前馈(提供动力) + 陀螺仪阻尼(防止疯转)
@@ -187,7 +215,7 @@ void control_motor(void)
 	
 
     // 5. 【死区补偿】
-    if(pwm1 >= 0) pwm1 += 120; else pwm1 -= 120;    //电池从3S换成了2S，死区从140修改成250
+    if(pwm1 >= 0) pwm1 += 120; else pwm1 -= 120;    
     if(pwm2 >= 0) pwm2 += 120; else pwm2 -= 120;
 
 
